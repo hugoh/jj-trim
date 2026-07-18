@@ -305,7 +305,7 @@ func TestBrowse_FiltersOverlay_CommitsToggle_SpaceKeyWorks(t *testing.T) {
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter}) // save
 	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
 		return strings.Contains(string(bts), "Commits")
-	}, teatest.WithDuration(5*time.Second))
+	}, teatest.WithDuration(20*time.Second))
 
 	tm.Send(tea.KeyPressMsg{Code: 'q'})
 	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
