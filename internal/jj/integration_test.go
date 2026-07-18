@@ -480,6 +480,23 @@ func TestGitCommitDuplicate_RealRepo(t *testing.T) {
 
 	dir := t.TempDir()
 	runIn(t, dir, "git", "init", "--colocate")
+
+	// The raw `git commit` below needs a local identity — CI runners don't
+	// have a global one configured, unlike most dev machines.
+	gitConfigEmail := exec.CommandContext(
+		context.Background(),
+		"git",
+		"config",
+		"user.email",
+		"test@example.com",
+	)
+	gitConfigEmail.Dir = dir
+	require.NoError(t, gitConfigEmail.Run())
+
+	gitConfigName := exec.CommandContext(context.Background(), "git", "config", "user.name", "Test")
+	gitConfigName.Dir = dir
+	require.NoError(t, gitConfigName.Run())
+
 	runIn(t, dir, "describe", "-m", "root change")
 	runIn(t, dir, "bookmark", "create", "main", "-r", "@")
 
