@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/exp/teatest/v2"
 	"github.com/hugoh/jj-trim/internal/browse"
 	"github.com/hugoh/jj-trim/internal/classify"
@@ -304,8 +305,8 @@ func TestBrowse_FiltersOverlay_CommitsToggle_SpaceKeyWorks(t *testing.T) {
 	tm.Send(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter}) // save
 	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
-		return strings.Contains(string(bts), "Commits")
-	}, teatest.WithDuration(20*time.Second))
+		return strings.Contains(ansi.Strip(string(bts)), "Commits")
+	}, teatest.WithDuration(5*time.Second))
 
 	tm.Send(tea.KeyPressMsg{Code: 'q'})
 	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
