@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+#MISE description="Upgrade dependencies"
+set -e
+go get -u -t ./...
+go mod tidy -v

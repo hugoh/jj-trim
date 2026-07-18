@@ -1,0 +1,36 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: v1.13.2
+_src_path: https://github.com/hugoh/go-tools.git
+cog_omit_types: []
+coverage_total: 75
+golangci_extra_disable:
+- depguard
+- exhaustruct
+- godoclint
+- ireturn
+- testpackage
+- varnamelen
+golangci_extra_exclusions: []
+golangci_settings: "revive:\n  rules:\n    - name: redefines-builtin-id\n      disabled:\
+    \ true\n    - name: exported\n      disabled: true\n    - name: unused-parameter\n\
+    \    - name: unused-receiver\ntagliatelle:\n  case:\n    rules:\n      json: snake\n"
+golangci_test_exclude_linters:
+- err113
+- funlen
+- varnamelen
+goreleaser_before_hooks: []
+goreleaser_version_pkg: main
+has_executable: true
+has_fuzz: false
+has_gen: false
+has_goreleaser: true
+has_homebrew_cask: true
+has_test_int: false
+nfpm_extra_contents: []
+project_description: Clean up merged bookmarks and abandoned anonymous commits in
+    jj repositories
+project_name: jj-trim
+testcoverage_excludes:
+- main\.go$
+testcoverage_overrides: []
+

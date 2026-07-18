@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Scan dependencies for known vulnerabilities"
+#MISE sources=["go.mod", "go.sum"]
+govulncheck ./...

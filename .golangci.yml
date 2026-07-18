@@ -1,0 +1,40 @@
+version: "2"
+linters:
+  default: all
+  disable:
+    - gomodguard
+    - noinlineerr
+    - paralleltest
+    - depguard
+    - exhaustruct
+    - godoclint
+    - ireturn
+    - testpackage
+    - varnamelen
+    - wsl
+  settings:
+    revive:
+      rules:
+        - name: redefines-builtin-id
+          disabled: true
+        - name: exported
+          disabled: true
+        - name: unused-parameter
+        - name: unused-receiver
+    tagliatelle:
+      case:
+        rules:
+          json: snake
+  exclusions:
+    rules:
+      - path: _test\.go$
+        linters:
+          - err113
+          - funlen
+          - varnamelen
+formatters:
+  enable:
+    - gci
+    - gofumpt
+    - goimports
+    - golines

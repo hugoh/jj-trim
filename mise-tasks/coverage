@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Check test coverage"
+#MISE depends=["test"]
+go-test-coverage -config .testcoverage.yml

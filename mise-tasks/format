@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+#MISE description="Format the code"
+#MISE sources=["**/*.go", "**/*.json", "**/*.md", "**/*.toml", "**/*.yaml", "**/*.yml"]
+set -e
+golangci-lint fmt ./...
+hk fix --all

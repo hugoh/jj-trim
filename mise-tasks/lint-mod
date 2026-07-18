@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Check go.mod tidiness"
+#MISE sources=["go.mod", "**/*.go"]
+go mod tidy -diff

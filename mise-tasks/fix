@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+#MISE description="Lint and fix code"
+set -e
+mise run lint-mod
+mise run lint-deadcode -- --test
+mise run lint-go -- --fix

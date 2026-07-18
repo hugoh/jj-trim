@@ -1,0 +1,18 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["github>hugoh/go-tools:go-renovaterc"],
+  "packageRules": [
+    {
+      "description": "hk.pkl is Copier-managed (regenerated on every `copier update` from go-tools' template). Let Copier own its version instead of Renovate bumping it directly, to avoid the two racing to update the same file.",
+      "matchManagers": ["custom.regex"],
+      "matchFileNames": ["hk.pkl"],
+      "enabled": false
+    },
+    {
+      "description": "mise.toml [tools] versions are Copier-managed too (regenerated on every `copier update` from go-tools' template's mise.toml.jinja). Let Copier own tool versions instead of Renovate bumping them directly, to avoid the two racing to update the same file.",
+      "matchManagers": ["mise"],
+      "matchFileNames": ["mise.toml"],
+      "enabled": false
+    }
+  ]
+}

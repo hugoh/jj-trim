@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+#MISE description="Development mode"
+go run . "$@"

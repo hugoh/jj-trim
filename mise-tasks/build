@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Build application"
+#MISE sources=["**/*.go", "go.mod", "go.sum"]
+go build -o "dist/$(basename "$(go list -m | sed -E 's|/v[0-9]+$||')")" .

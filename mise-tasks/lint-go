@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+#MISE description="Lint Go source"
+#MISE sources=["**/*.go"]
+#USAGE flag "--fix" help="Automatically fix issues"
+flags=()
+[ "${usage_fix:-}" != "" ] && flags+=(--fix)
+golangci-lint run "${flags[@]}" ./...

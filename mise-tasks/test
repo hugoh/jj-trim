@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Run tests with coverage"
+#MISE sources=["go.mod", "**/*.go"]
+gotestsum -- -race -shuffle=on -coverprofile="$COVEROUT" -covermode=atomic ./...

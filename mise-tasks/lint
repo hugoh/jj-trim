@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Lint code, check dead code"
+#MISE depends=["lint-mod", "lint-deadcode --test", "lint-vuln", "lint-go", "lint-release"]
+true

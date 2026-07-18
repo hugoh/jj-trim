@@ -1,0 +1,85 @@
+version: 2
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+      - freebsd
+    goarch:
+      - amd64
+      - arm64
+      - "386"
+      - arm
+    goarm:
+      - "6"
+      - "7"
+    ignore:
+      - goos: darwin
+        goarch: "386"
+      - goos: darwin
+        goarch: arm
+      - goos: freebsd
+        goarch: arm
+      - goos: freebsd
+        goarch: "386"
+    flags:
+      - -trimpath
+      - -mod=readonly
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+
+nfpms:
+  - maintainer: "Hugo Haas <hugoh@hugoh.net>"
+    description: "Clean up merged bookmarks and abandoned anonymous commits in jj repositories"
+    homepage: "https://github.com/hugoh/jj-trim"
+    license: "MIT"
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+
+homebrew_casks:
+  - name: jj-trim
+    repository:
+      owner: hugoh
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    description: "Clean up merged bookmarks and abandoned anonymous commits in jj repositories"
+    homepage: "https://github.com/hugoh/jj-trim"
+    binaries:
+      - jj-trim
+changelog:
+  use: git
+  sort: asc
+  groups:
+    - title: "⚠️ Breaking Changes"
+      regexp: '^.*?(\w+)(\(.+\))??!:.+$'
+      order: 0
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Bug Fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Documentation
+      regexp: '^.*?docs?(\([[:word:]]+\))??!?:.+$'
+      order: 3
+    - title: Dependency Updates
+      regexp: '^.*?(feat|fix|chore)\(deps\).*:.+$'
+      order: 900
+    - title: Others
+      order: 999
+  filters:
+    exclude:
+      - "^chore\\(release\\): prepare for"
+      - "^chore\\(deps"
+      - "Merge pull request"
+      - "Merge branch"
+
+checksum:
+
+snapshot:

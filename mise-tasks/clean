@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Clean the project"
+go clean
+rm -f "$COVEROUT"
