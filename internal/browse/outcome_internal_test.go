@@ -3,6 +3,7 @@ package browse
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -158,4 +159,77 @@ func TestResultFromFinishedModel_ChildErrorKeepsResult(t *testing.T) {
 		result.OpIDs,
 		"the primary batch's opID must not be discarded just because the cascade batch errored",
 	)
+}
+
+// stubTeaModel is a bare tea.Model that deliberately does not implement
+// review.FinishedSession — used to drive resultFromFinishedModel's fallback
+// branch for a child of the wrong type.
+type stubTeaModel struct{}
+
+func (stubTeaModel) Init() tea.Cmd                       { return nil }
+func (stubTeaModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return stubTeaModel{}, nil }
+func (stubTeaModel) View() tea.View                      { return tea.View{} }
+
+func TestResultFromFinishedModel_ChildNotFinishedSession_ReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
+	m := &model{child: stubTeaModel{}}
+
+	result, err := resultFromFinishedModel(m)
+
+	require.NoError(t, err)
+	assert.Equal(t, review.Result{}, result)
+}
+
+// TestResultFromFinishedModel_Success covers resultFromFinishedModel's
+// ordinary success path: no fm.err, and the child's Outcome() itself
+// returns no pending error.
+func TestResultFromFinishedModel_Success(t *testing.T) {
+	t.Parallel()
+
+	fake := deleteOneItemFake(t)
+
+	m := loadedModel(t, newModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake)))
+	m = markConfirmApply(t, m)
+
+	result, err := resultFromFinishedModel(m)
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{testOpID}, result.OpIDs)
+	assert.Len(t, result.Applied, 1)
+}
+
+// TestRun_ContextCanceled_ReturnsError guards Run's own error path: when the
+// tea.Program's context is already cancelled, program.Run() returns an error
+// wrapping it, which Run must surface rather than silently returning a zero
+// Result.
+func TestRun_ContextCanceled_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	opts := Options{
+		Commits: func(context.Context, jj.Runner, trimconfig.Config) (Session, error) {
+			return Session{
+				Fetch: func(context.Context, jj.Runner, classify.Candidate) (string, error) {
+					return "", nil
+				},
+			}, nil
+		},
+		Bookmarks: func(context.Context, jj.Runner, trimconfig.Config) (Session, error) {
+			return Session{}, nil
+		},
+	}
+
+	_, err := Run(
+		ctx,
+		&jj.Fake{},
+		trimconfig.Config{},
+		opts,
+		strings.NewReader(""),
+		&strings.Builder{},
+	)
+
+	require.Error(t, err)
 }

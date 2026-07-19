@@ -755,3 +755,76 @@ func TestReview_ApplyError_DismissClearsIt_QuitWhileShownPropagatesIt(t *testing
 		require.Error(t, err, "quitting while an error is still shown must surface it")
 	})
 }
+
+// TestIdle_ReflectsListVsConfirmScreen guards the ChildStatus contract
+// internal/browse relies on: Idle() must report true on the list screen and
+// false once the session has moved to the confirm screen.
+func TestIdle_ReflectsListVsConfirmScreen(t *testing.T) {
+	t.Parallel()
+
+	m := review.NewModel(t.Context(), &jj.Fake{}, testItems(t), deleteAction(t), noopFetch)
+
+	cs, ok := m.(review.ChildStatus)
+	require.True(t, ok, "model must implement review.ChildStatus")
+	assert.True(t, cs.Idle(), "a fresh model on the list screen must be idle")
+
+	m, _ = m.Update(tea.KeyPressMsg{Code: 'd'})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	cs, ok = m.(review.ChildStatus)
+	require.True(t, ok)
+	assert.False(t, cs.Idle(), "the confirm screen must not be idle")
+}
+
+// TestNewModelWithResult_SeedsInitialResult guards internal/browse's mode-
+// and filters-switch rebuild path: a child built via NewModelWithResult
+// must report the seeded Result via Outcome even before anything has been
+// applied in the new session.
+func TestNewModelWithResult_SeedsInitialResult(t *testing.T) {
+	t.Parallel()
+
+	initial := review.Result{OpIDs: []string{"seed-op"}}
+	m := review.NewModelWithResult(
+		t.Context(), &jj.Fake{}, testItems(t), deleteAction(t), noopFetch, initial,
+	)
+
+	fs, ok := m.(review.FinishedSession)
+	require.True(t, ok, "model must implement review.FinishedSession")
+
+	result, err := fs.Outcome()
+	require.NoError(t, err)
+	assert.Equal(t, initial, result, "the seeded Result must survive until something new applies")
+}
+
+// TestRun_QuitReturnsZeroResult exercises Run end-to-end over real io
+// streams (rather than teatest's synthetic message injection), guarding
+// that quitting immediately returns a zero Result and no error.
+func TestRun_QuitReturnsZeroResult(t *testing.T) {
+	t.Parallel()
+
+	result, err := review.Run(
+		t.Context(), &jj.Fake{}, testItems(t), deleteAction(t), noopFetch,
+		strings.NewReader("q"), &strings.Builder{},
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, review.Result{}, result)
+}
+
+// TestRun_ContextCanceled_ReturnsError guards Run's own error path: when the
+// tea.Program's context is already cancelled, program.Run() returns an
+// error, which Run must wrap and surface rather than silently returning a
+// zero Result.
+func TestRun_ContextCanceled_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, err := review.Run(
+		ctx, &jj.Fake{}, testItems(t), deleteAction(t), noopFetch,
+		strings.NewReader(""), &strings.Builder{},
+	)
+
+	require.Error(t, err)
+}

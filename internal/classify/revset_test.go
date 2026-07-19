@@ -47,6 +47,12 @@ func TestAnonymousForksNoDescription(t *testing.T) {
 	assert.Equal(t, `(heads(mutable()) ~ bookmarks() ~ @) & description("")`, got)
 }
 
+func TestKeptHistory(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "(::@ | bookmarks()) ~ root()", classify.KeptHistory())
+}
+
 func TestChangeIDRevset(t *testing.T) {
 	t.Parallel()
 

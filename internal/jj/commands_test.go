@@ -35,6 +35,20 @@ func TestLog(t *testing.T) {
 	assert.Equal(t, `{"id":"abc"}`+"\n", out) //nolint:testifylint
 }
 
+func TestLog_Error(t *testing.T) {
+	t.Parallel()
+
+	fake := &jj.Fake{
+		Errs: map[string]error{
+			jj.Key("log", "-r", "trunk()", "-T", "tmpl", "--no-graph"): errors.New("boom"),
+		},
+	}
+
+	_, err := jj.Log(context.Background(), fake, "trunk()", "tmpl")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "boom")
+}
+
 func TestLogPreview(t *testing.T) {
 	t.Parallel()
 
@@ -78,6 +92,36 @@ func TestShow(t *testing.T) {
 	out, err := jj.Show(context.Background(), fake, "abc123")
 	require.NoError(t, err)
 	assert.Equal(t, "Change abc123\n", out)
+}
+
+func TestLogPreview_Error(t *testing.T) {
+	t.Parallel()
+
+	fake := &jj.Fake{
+		Errs: map[string]error{
+			jj.Key("log", "-r", "candidates()", "--no-pager", "--color=never"): errors.New("boom"),
+		},
+	}
+
+	var buf bytes.Buffer
+
+	err := jj.LogPreview(context.Background(), fake, &buf, "candidates()", false)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "boom")
+}
+
+func TestShow_Error(t *testing.T) {
+	t.Parallel()
+
+	fake := &jj.Fake{
+		Errs: map[string]error{
+			jj.Key("show", "abc123"): errors.New("no such change"),
+		},
+	}
+
+	_, err := jj.Show(context.Background(), fake, "abc123")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no such change")
 }
 
 const (
@@ -169,6 +213,20 @@ func TestBookmarkDelete(t *testing.T) {
 			fake.Calls[0].Args,
 		)
 	})
+
+	t.Run("error", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{
+			Errs: map[string]error{
+				jj.Key(bookmarkVerb, deleteVerb, `exact:"a"`): errors.New("no such bookmark"),
+			},
+		}
+
+		err := jj.BookmarkDelete(context.Background(), fake, []string{"a"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no such bookmark")
+	})
 }
 
 func TestExactRevsetTerm(t *testing.T) {
@@ -184,6 +242,10 @@ func TestExactRevsetTerm(t *testing.T) {
 		{"embedded quote", `we"ird`, `exact:"we\"ird"`},
 		{"embedded backslash", `back\slash`, `exact:"back\\slash"`},
 		{"narrow no-break space", "8-31-14 PM", "exact:\"8-31-14 PM\""},
+		{"embedded newline", "a\nb", `exact:"a\nb"`},
+		{"embedded carriage return", "a\rb", `exact:"a\rb"`},
+		{"embedded tab", "a\tb", `exact:"a\tb"`},
+		{"embedded null byte", "a\x00b", `exact:"a\0b"`},
 	}
 
 	for _, tt := range tests {
@@ -215,18 +277,148 @@ func TestAbandon(t *testing.T) {
 		require.Len(t, fake.Calls, 1)
 		assert.Equal(t, []string{"abandon", "x", "y"}, fake.Calls[0].Args)
 	})
+
+	t.Run("error", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{
+			Errs: map[string]error{
+				jj.Key("abandon", "x"): errors.New("cannot abandon immutable commit"),
+			},
+		}
+
+		err := jj.Abandon(context.Background(), fake, []string{"x"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot abandon immutable commit")
+	})
+}
+
+func TestTrunkHistory(t *testing.T) {
+	t.Parallel()
+
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{
+			Stdout: map[string]string{
+				jj.Key("log", "-r", "::(trunk())", "--no-graph",
+					"-T", `description ++ "\n---\n"`): "first\n---\nsecond\n---\n",
+			},
+		}
+
+		out, err := jj.TrunkHistory(context.Background(), fake, "trunk()")
+		require.NoError(t, err)
+		assert.Equal(t, "first\n---\nsecond\n---\n", out)
+	})
+
+	t.Run("error", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{
+			Errs: map[string]error{
+				jj.Key("log", "-r", "::(trunk())", "--no-graph",
+					"-T", `description ++ "\n---\n"`): errors.New("bad revset"),
+			},
+		}
+
+		_, err := jj.TrunkHistory(context.Background(), fake, "trunk()")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "bad revset")
+	})
 }
 
 func TestGitFetch(t *testing.T) {
 	t.Parallel()
 
-	fake := &jj.Fake{
-		Errs: map[string]error{
-			jj.Key("git", "fetch"): errors.New("network unreachable"),
-		},
-	}
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
 
-	err := jj.GitFetch(context.Background(), fake)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "network unreachable")
+		fake := &jj.Fake{
+			Stdout: map[string]string{
+				jj.Key("git", "fetch"): "",
+			},
+		}
+
+		require.NoError(t, jj.GitFetch(context.Background(), fake))
+	})
+
+	t.Run("error", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{
+			Errs: map[string]error{
+				jj.Key("git", "fetch"): errors.New("network unreachable"),
+			},
+		}
+
+		err := jj.GitFetch(context.Background(), fake)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "network unreachable")
+	})
+}
+
+func TestLastOpID(t *testing.T) {
+	t.Parallel()
+
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{
+			Stdout: map[string]string{
+				jj.Key("op", "log", "--no-graph", "--limit", "1",
+					"-T", "self.id().short() ++ \"\\n\""): "abc123\n",
+			},
+		}
+
+		out, err := jj.LastOpID(context.Background(), fake)
+		require.NoError(t, err)
+		assert.Equal(t, "abc123", out)
+	})
+
+	t.Run("error", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{
+			Errs: map[string]error{
+				jj.Key("op", "log", "--no-graph", "--limit", "1",
+					"-T", "self.id().short() ++ \"\\n\""): errors.New("no operations"),
+			},
+		}
+
+		_, err := jj.LastOpID(context.Background(), fake)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no operations")
+	})
+}
+
+func TestOpShow(t *testing.T) {
+	t.Parallel()
+
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{
+			Stdout: map[string]string{
+				jj.Key("op", "show", "abc123"): "Deleted bookmark tags\n",
+			},
+		}
+
+		out, err := jj.OpShow(context.Background(), fake, "abc123")
+		require.NoError(t, err)
+		assert.Equal(t, "Deleted bookmark tags\n", out)
+	})
+
+	t.Run("error", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{
+			Errs: map[string]error{
+				jj.Key("op", "show", "abc123"): errors.New("no such operation"),
+			},
+		}
+
+		_, err := jj.OpShow(context.Background(), fake, "abc123")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no such operation")
+	})
 }
