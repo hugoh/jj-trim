@@ -41,14 +41,21 @@ func (w *failAfterWriter) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func TestPrint_GraphThenLegend(t *testing.T) {
-	t.Parallel()
-
-	fake := &jj.Fake{
+// candidateFake is a jj.Fake whose `jj log candidates()` output is
+// candidateLogLine, the graph fixture shared by preview.Print's happy-path
+// tests.
+func candidateFake() *jj.Fake {
+	return &jj.Fake{
 		Stdout: map[string]string{
 			jj.Key("log", "-r", "candidates()", "--no-pager", "--color=never"): candidateLogLine,
 		},
 	}
+}
+
+func TestPrint_GraphThenLegend(t *testing.T) {
+	t.Parallel()
+
+	fake := candidateFake()
 
 	var buf bytes.Buffer
 
@@ -68,11 +75,7 @@ func TestPrint_GraphThenLegend(t *testing.T) {
 func TestPrint_Explain(t *testing.T) {
 	t.Parallel()
 
-	fake := &jj.Fake{
-		Stdout: map[string]string{
-			jj.Key("log", "-r", "candidates()", "--no-pager", "--color=never"): candidateLogLine,
-		},
-	}
+	fake := candidateFake()
 
 	var buf bytes.Buffer
 

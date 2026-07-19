@@ -176,43 +176,33 @@ func TestBookmarkDelete(t *testing.T) {
 		)
 	})
 
-	t.Run("names with spaces are quoted", func(t *testing.T) {
-		t.Parallel()
+	nameQuotingTests := []struct {
+		name     string
+		bookmark string
+	}{
+		{"names with spaces are quoted", "backup/refactor/slog-8-14-52 PM"},
+		{"names with narrow no-break spaces are not \\u-escaped", "backup/slog-8-31-14 PM"},
+	}
 
-		name := "backup/refactor/slog-8-14-52 PM"
-		fake := &jj.Fake{
-			Stdout: map[string]string{
-				jj.Key(bookmarkVerb, deleteVerb, `exact:"`+name+`"`): "",
-			},
-		}
+	for _, tt := range nameQuotingTests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-		require.NoError(t, jj.BookmarkDelete(context.Background(), fake, []string{name}))
-		require.Len(t, fake.Calls, 1)
-		assert.Equal(
-			t,
-			[]string{bookmarkVerb, deleteVerb, `exact:"` + name + `"`},
-			fake.Calls[0].Args,
-		)
-	})
+			fake := &jj.Fake{
+				Stdout: map[string]string{
+					jj.Key(bookmarkVerb, deleteVerb, `exact:"`+tt.bookmark+`"`): "",
+				},
+			}
 
-	t.Run("names with narrow no-break spaces are not \\u-escaped", func(t *testing.T) {
-		t.Parallel()
-
-		name := "backup/slog-8-31-14 PM"
-		fake := &jj.Fake{
-			Stdout: map[string]string{
-				jj.Key(bookmarkVerb, deleteVerb, `exact:"`+name+`"`): "",
-			},
-		}
-
-		require.NoError(t, jj.BookmarkDelete(context.Background(), fake, []string{name}))
-		require.Len(t, fake.Calls, 1)
-		assert.Equal(
-			t,
-			[]string{bookmarkVerb, deleteVerb, `exact:"` + name + `"`},
-			fake.Calls[0].Args,
-		)
-	})
+			require.NoError(t, jj.BookmarkDelete(context.Background(), fake, []string{tt.bookmark}))
+			require.Len(t, fake.Calls, 1)
+			assert.Equal(
+				t,
+				[]string{bookmarkVerb, deleteVerb, `exact:"` + tt.bookmark + `"`},
+				fake.Calls[0].Args,
+			)
+		})
+	}
 
 	t.Run("error", func(t *testing.T) {
 		t.Parallel()

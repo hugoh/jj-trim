@@ -34,24 +34,7 @@ const (
 func TestHandleDetailFetched_StaleIndexIgnored(t *testing.T) {
 	t.Parallel()
 
-	items := []Item{
-		{
-			IDs:       []string{"w"},
-			Candidate: classify.Candidate{ChangeID: "w"},
-			Legend: classify.LegendEntry{
-				ChangeIDShort: "w",
-				Reason:        classify.ReasonNoDescription,
-			},
-		},
-	}
-
-	m := newModel(
-		t.Context(),
-		&jj.Fake{},
-		items,
-		Action{Verb: testVerbDelete, Past: testPastDeleted},
-		noopFetch,
-	)
+	m := newSingleItemModel(t, Action{Verb: testVerbDelete, Past: testPastDeleted})
 
 	require.NotPanics(t, func() {
 		_, _ = m.handleDetailFetched(detailFetchedMsg{index: 5, content: "stale"})
@@ -64,17 +47,64 @@ func noopFetch(context.Context, jj.Runner, classify.Candidate) (string, error) {
 	return "context", nil
 }
 
+// itemWithReason builds a single Item for changeID, with IDs set to the same
+// value, and the given classify.Reason — the shape shared by most of this
+// file's test fixtures, which otherwise only differ in changeID/reason.
+func itemWithReason(changeID string, reason classify.Reason) Item {
+	return Item{
+		IDs:       []string{changeID},
+		Candidate: classify.Candidate{ChangeID: changeID},
+		Legend: classify.LegendEntry{
+			ChangeIDShort: changeID,
+			Reason:        reason,
+		},
+	}
+}
+
+// wItem is itemWithReason for the "w"/ReasonNoDescription fixture used by
+// most single-item tests in this file.
+func wItem() Item {
+	return itemWithReason("w", classify.ReasonNoDescription)
+}
+
+// newSingleItemModel builds a model over a single wItem() with action,
+// the shape shared by most of this file's model constructions.
+func newSingleItemModel(t *testing.T, action Action) *model {
+	t.Helper()
+
+	return newModel(t.Context(), &jj.Fake{}, []Item{wItem()}, action, noopFetch)
+}
+
+// newNilItemModel builds an itemless model over r with the shared
+// testVerbDelete action — the shape shared by TestRunBatch's subtests and
+// TestRunCascadeBatch_*, which only exercise runBatch/runCascadeBatch
+// directly and don't need any actual Items.
+func newNilItemModel(t *testing.T, r jj.Runner) *model {
+	t.Helper()
+
+	return newModel(
+		t.Context(), r, nil, Action{Verb: testVerbDelete, Past: testPastDeleted}, noopFetch,
+	)
+}
+
+// fillLines joins n lines of the form "<prefix> <i>", long enough to
+// overflow a small viewport's height for scroll tests.
+func fillLines(n int, prefix string) string {
+	lines := make([]string, 0, n)
+	for i := range n {
+		lines = append(lines, fmt.Sprintf("%s %d", prefix, i))
+	}
+
+	return strings.Join(lines, "\n")
+}
+
 // TestReviewItem_FilterValue guards list.Item's FilterValue implementation:
 // it must delegate to the Legend's own String rendering, so filtering (if
 // ever re-enabled) matches what's actually shown on screen.
 func TestReviewItem_FilterValue(t *testing.T) {
 	t.Parallel()
 
-	ri := reviewItem{
-		Item: Item{
-			Legend: classify.LegendEntry{ChangeIDShort: "w", Reason: classify.ReasonNoDescription},
-		},
-	}
+	ri := reviewItem{Item: wItem()}
 
 	assert.Equal(t, ri.Legend.String(), ri.FilterValue())
 }
@@ -88,33 +118,10 @@ func TestReviewItem_FilterValue(t *testing.T) {
 func detailScrollTestModel(t *testing.T) *model {
 	t.Helper()
 
-	items := []Item{
-		{
-			IDs:       []string{"w"},
-			Candidate: classify.Candidate{ChangeID: "w"},
-			Legend: classify.LegendEntry{
-				ChangeIDShort: "w",
-				Reason:        classify.ReasonNoDescription,
-			},
-		},
-	}
-
-	m := newModel(
-		t.Context(),
-		&jj.Fake{},
-		items,
-		Action{Verb: testVerbDelete, Past: testPastDeleted},
-		noopFetch,
-	)
+	m := newSingleItemModel(t, Action{Verb: testVerbDelete, Past: testPastDeleted})
 
 	_, _ = m.handleWindowSize(tea.WindowSizeMsg{Width: 40, Height: 12})
-
-	lines := make([]string, 0, 100)
-	for i := range 100 {
-		lines = append(lines, fmt.Sprintf("line %d", i))
-	}
-
-	m.detail.SetContent(strings.Join(lines, "\n"))
+	m.detail.SetContent(fillLines(100, "line"))
 
 	return m
 }
@@ -184,24 +191,7 @@ func TestDetailScroll_DoesNotMoveListCursorOrTriggerMarkKeys(t *testing.T) {
 func TestDetailScroll_ResetsOnCursorMove(t *testing.T) {
 	t.Parallel()
 
-	items := []Item{
-		{
-			IDs:       []string{"w"},
-			Candidate: classify.Candidate{ChangeID: "w"},
-			Legend: classify.LegendEntry{
-				ChangeIDShort: "w",
-				Reason:        classify.ReasonNoDescription,
-			},
-		},
-		{
-			IDs:       []string{"a"},
-			Candidate: classify.Candidate{ChangeID: "a"},
-			Legend: classify.LegendEntry{
-				ChangeIDShort: "a",
-				Reason:        classify.ReasonHasDescription,
-			},
-		},
-	}
+	items := []Item{wItem(), itemWithReason("a", classify.ReasonHasDescription)}
 
 	m := newModel(
 		t.Context(),
@@ -211,13 +201,7 @@ func TestDetailScroll_ResetsOnCursorMove(t *testing.T) {
 		noopFetch,
 	)
 	_, _ = m.handleWindowSize(tea.WindowSizeMsg{Width: 40, Height: 12})
-
-	lines := make([]string, 0, 100)
-	for i := range 100 {
-		lines = append(lines, fmt.Sprintf("line %d", i))
-	}
-
-	m.detail.SetContent(strings.Join(lines, "\n"))
+	m.detail.SetContent(fillLines(100, "line"))
 
 	_, _ = m.handleKey(ctrlKey('j'))
 	require.Positive(t, m.detail.YOffset())
@@ -240,18 +224,7 @@ func TestDetailScroll_ResetsOnCursorMove(t *testing.T) {
 func TestHandleBackgroundColor_UpdatesThemeAndRebuildsDelegate(t *testing.T) {
 	t.Parallel()
 
-	items := []Item{
-		{
-			IDs:       []string{"w"},
-			Candidate: classify.Candidate{ChangeID: "w"},
-			Legend: classify.LegendEntry{
-				ChangeIDShort: "w",
-				Reason:        classify.ReasonNoDescription,
-			},
-		},
-	}
-
-	m := newModel(t.Context(), &jj.Fake{}, items, deleteWithCascade(), noopFetch)
+	m := newSingleItemModel(t, deleteWithCascade())
 	require.True(t, m.hasDarkBG, "model must default to dark before learning the real theme")
 
 	_, cmd := m.handleBackgroundColor(tea.BackgroundColorMsg{Color: color.White})
@@ -275,35 +248,12 @@ func deleteWithCascade() Action {
 func appliedScreenModel(t *testing.T) *model {
 	t.Helper()
 
-	items := []Item{
-		{
-			IDs:       []string{"w"},
-			Candidate: classify.Candidate{ChangeID: "w"},
-			Legend: classify.LegendEntry{
-				ChangeIDShort: "w",
-				Reason:        classify.ReasonNoDescription,
-			},
-		},
-	}
-
-	m := newModel(
-		t.Context(),
-		&jj.Fake{},
-		items,
-		Action{Verb: testVerbDelete, Past: testPastDeleted},
-		noopFetch,
-	)
+	m := newSingleItemModel(t, Action{Verb: testVerbDelete, Past: testPastDeleted})
 	_, _ = m.handleWindowSize(tea.WindowSizeMsg{Width: 40, Height: 12})
 
 	m.screen = screenApplied
 	m.lastBatch = appliedMsg{result: Result{OpIDs: []string{"abc123"}}}
-
-	lines := make([]string, 0, 50)
-	for i := range 50 {
-		lines = append(lines, fmt.Sprintf("op log line %d", i))
-	}
-
-	m.opLog.SetContent(strings.Join(lines, "\n"))
+	m.opLog.SetContent(fillLines(50, "op log line"))
 
 	return m
 }
@@ -362,13 +312,7 @@ func TestRunBatch(t *testing.T) {
 
 		assert := assert.New(t)
 
-		m := newModel(
-			t.Context(),
-			&jj.Fake{},
-			nil,
-			Action{Verb: testVerbDelete, Past: testPastDeleted},
-			noopFetch,
-		)
+		m := newNilItemModel(t, &jj.Fake{})
 		applyCalled := false
 		action := Action{
 			Verb: testVerbDelete, Past: testPastDeleted,
@@ -391,13 +335,7 @@ func TestRunBatch(t *testing.T) {
 
 		assert := assert.New(t)
 
-		m := newModel(
-			t.Context(),
-			&jj.Fake{},
-			nil,
-			Action{Verb: testVerbDelete, Past: testPastDeleted},
-			noopFetch,
-		)
+		m := newNilItemModel(t, &jj.Fake{})
 		action := Action{
 			Verb: testVerbDelete, Past: testPastDeleted,
 			Apply: func(context.Context, jj.Runner, []string) error { return boom },
@@ -415,13 +353,7 @@ func TestRunBatch(t *testing.T) {
 		assert := assert.New(t)
 
 		fake := &jj.Fake{Errs: map[string]error{opKey: boom}}
-		m := newModel(
-			t.Context(),
-			fake,
-			nil,
-			Action{Verb: testVerbDelete, Past: testPastDeleted},
-			noopFetch,
-		)
+		m := newNilItemModel(t, fake)
 		action := Action{
 			Verb: testVerbDelete, Past: testPastDeleted,
 			Apply: func(context.Context, jj.Runner, []string) error { return nil },
@@ -448,13 +380,7 @@ func TestRunCascadeBatch_BeforeLookupError_IsWrapped(t *testing.T) {
 				"self.id().short() ++ \"\\n\""): boom,
 		},
 	}
-	m := newModel(
-		t.Context(),
-		fake,
-		nil,
-		Action{Verb: testVerbDelete, Past: testPastDeleted},
-		noopFetch,
-	)
+	m := newNilItemModel(t, fake)
 
 	applyCalled := false
 	action := Action{
@@ -481,13 +407,7 @@ func TestRunCascadeBatch_ApplyError_IsWrapped(t *testing.T) {
 	boom := errors.New("boom")
 	opKey := jj.Key("op", "log", "--no-graph", "--limit", "1", "-T", "self.id().short() ++ \"\\n\"")
 	fake := &jj.Fake{Stdout: map[string]string{opKey: testOpID}}
-	m := newModel(
-		t.Context(),
-		fake,
-		nil,
-		Action{Verb: testVerbDelete, Past: testPastDeleted},
-		noopFetch,
-	)
+	m := newNilItemModel(t, fake)
 
 	action := Action{
 		Verb: testVerbAbandon, Past: testPastAbandoned,
@@ -510,8 +430,7 @@ func TestRunCascadeBatch_AfterLookupError_IsWrapped(t *testing.T) {
 	boom := errors.New("boom")
 	opKey := jj.Key("op", "log", "--no-graph", "--limit", "1", "-T", "self.id().short() ++ \"\\n\"")
 	fake := &jj.Fake{Stdout: map[string]string{opKey: testOpID}}
-	m := newModel(t.Context(), &countingAfterErrorFake{Fake: fake, errAfter: 1, err: boom},
-		nil, Action{Verb: testVerbDelete, Past: testPastDeleted}, noopFetch)
+	m := newNilItemModel(t, &countingAfterErrorFake{Fake: fake, errAfter: 1, err: boom})
 
 	action := Action{
 		Verb: testVerbAbandon, Past: testPastAbandoned,

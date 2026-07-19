@@ -116,11 +116,7 @@ func TestResultFromFinishedModel_ChildErrorKeepsResult(t *testing.T) {
 		},
 		Bookmarks: func(context.Context, jj.Runner, trimconfig.Config) (Session, error) {
 			return Session{
-				Action: review.Action{
-					Verb:  testVerbAbandon,
-					Past:  testPastAbandoned,
-					Apply: jj.Abandon,
-				},
+				Action: abandonAction(),
 			}, nil
 		},
 	}

@@ -33,17 +33,7 @@ func TestHandleDetailFetched_PrependsReasonHeader(t *testing.T) {
 		return "jj show output", nil
 	}
 
-	items := []Item{
-		{
-			Candidate: classify.Candidate{ChangeID: "w"},
-			Legend: classify.LegendEntry{
-				ChangeIDShort: "w",
-				Reason:        classify.ReasonNoDescription,
-			},
-		},
-	}
-
-	m := newModel(t.Context(), &jj.Fake{}, items,
+	m := newModel(t.Context(), &jj.Fake{}, []Item{wItem()},
 		Action{Verb: "delete", Past: "deleted", Apply: jj.BookmarkDelete}, fetch)
 
 	updated, _ := m.handleDetailFetched(detailFetchedMsg{index: 0, content: "jj show output"})
@@ -67,15 +57,7 @@ func TestHandleDetailFetched_ErrorPath_StillShowsReasonHeader(t *testing.T) {
 		return "", assert.AnError
 	}
 
-	items := []Item{
-		{
-			Candidate: classify.Candidate{ChangeID: "w"},
-			Legend: classify.LegendEntry{
-				ChangeIDShort: "w",
-				Reason:        classify.ReasonHasDescription,
-			},
-		},
-	}
+	items := []Item{itemWithReason("w", classify.ReasonHasDescription)}
 
 	m := newModel(t.Context(), &jj.Fake{}, items,
 		Action{Verb: "delete", Past: "deleted", Apply: jj.BookmarkDelete}, fetch)

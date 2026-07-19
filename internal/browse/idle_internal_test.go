@@ -26,6 +26,16 @@ const (
 	testPastAbandoned = "abandoned"
 )
 
+// abandonAction is the trivial bookmarks-mode review.Action shared by this
+// package's Options fixtures.
+func abandonAction() review.Action {
+	return review.Action{
+		Verb:  testVerbAbandon,
+		Past:  testPastAbandoned,
+		Apply: jj.Abandon,
+	}
+}
+
 // loadedModel drives m past its initial async load by executing Init()'s
 // returned command(s) directly (mimicking what a real tea.Program's own
 // batch-fanout would do) and feeding the resulting sessionLoadedMsg into
@@ -131,11 +141,7 @@ func deleteOneItemOpts(jj.Runner) Options {
 		},
 		Bookmarks: func(context.Context, jj.Runner, trimconfig.Config) (Session, error) {
 			return Session{
-				Action: review.Action{
-					Verb:  testVerbAbandon,
-					Past:  testPastAbandoned,
-					Apply: jj.Abandon,
-				},
+				Action: abandonAction(),
 				Fetch: func(context.Context, jj.Runner, classify.Candidate) (string, error) {
 					return "", nil
 				},

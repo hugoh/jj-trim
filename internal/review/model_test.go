@@ -84,6 +84,25 @@ func opLogSeq(ids ...string) (string, []string) {
 	return key, seq
 }
 
+// cascadeAppliedFake returns a jj.Fake wired for a "w" primary delete
+// followed by a cascade abandon whose op-log actually changes ("abc123" ->
+// "xyz789"), plus the two `jj op show` fetches the applied popup needs —
+// the fixture shared by tests that mark item 0 for cascade and expect it to
+// actually apply.
+func cascadeAppliedFake() *jj.Fake {
+	opLogKey, opLogVals := opLogSeq("abc123", "abc123", "xyz789")
+
+	return &jj.Fake{
+		Stdout: map[string]string{
+			jj.Key(bookmarkVerb, verbDelete, exactW): "",
+			jj.Key(verbAbandon, chainW):              "",
+			jj.Key("op", "show", "abc123"):           "",
+			jj.Key("op", "show", "xyz789"):           "",
+		},
+		StdoutSeq: map[string][]string{opLogKey: opLogVals},
+	}
+}
+
 // deleteAction is the "delete" Action shared by tests that don't care which
 // action is under test, just that Apply is/isn't called. Its markKey is
 // "d" ("delete"[:1]).
@@ -238,16 +257,7 @@ func TestReview_CascadeMarkAndApply(t *testing.T) {
 	// Three op-log snapshots in order: after the primary delete ("abc123"),
 	// before the cascade abandon (still "abc123" — nothing's changed yet),
 	// after it ("xyz789" — the abandon actually did something this time).
-	opLogKey, opLogVals := opLogSeq("abc123", "abc123", "xyz789")
-	fake := &jj.Fake{
-		Stdout: map[string]string{
-			jj.Key(bookmarkVerb, verbDelete, exactW): "",
-			jj.Key(verbAbandon, chainW):              "",
-			jj.Key("op", "show", "abc123"):           "",
-			jj.Key("op", "show", "xyz789"):           "",
-		},
-		StdoutSeq: map[string][]string{opLogKey: opLogVals},
-	}
+	fake := cascadeAppliedFake()
 	action := deleteWithCascadeAction(t)
 
 	tm := newTestModel(t, fake, testItems(t), action)
@@ -496,16 +506,7 @@ func TestReview_Unmark_ClearsEitherState(t *testing.T) {
 func TestReview_SwitchingMarkKeyChangesState(t *testing.T) {
 	t.Parallel()
 
-	opLogKey, opLogVals := opLogSeq("abc123", "abc123", "xyz789")
-	fake := &jj.Fake{
-		Stdout: map[string]string{
-			jj.Key(bookmarkVerb, verbDelete, exactW): "",
-			jj.Key(verbAbandon, chainW):              "",
-			jj.Key("op", "show", "abc123"):           "",
-			jj.Key("op", "show", "xyz789"):           "",
-		},
-		StdoutSeq: map[string][]string{opLogKey: opLogVals},
-	}
+	fake := cascadeAppliedFake()
 	action := deleteWithCascadeAction(t)
 
 	tm := newTestModel(t, fake, testItems(t), action)
@@ -658,26 +659,7 @@ func TestReview_ApplyThenContinue_AccumulatesAndPrunes(t *testing.T) {
 	}
 	action := abandonAction(t)
 
-	items := []review.Item{
-		{
-			IDs:       []string{"w"},
-			Candidate: classify.Candidate{ChangeID: "w"},
-			Legend: classify.LegendEntry{
-				ChangeIDShort: "w",
-				Reason:        classify.ReasonNoDescription,
-			},
-		},
-		{
-			IDs:       []string{"a"},
-			Candidate: classify.Candidate{ChangeID: "a"},
-			Legend: classify.LegendEntry{
-				ChangeIDShort: "a",
-				Reason:        classify.ReasonHasDescription,
-			},
-		},
-	}
-
-	tm := newTestModel(t, fake, items, action)
+	tm := newTestModel(t, fake, testItems(t), action)
 
 	// Apply item "w" first.
 	markAndConfirm(t, tm, tea.KeyPressMsg{Code: 'a'})

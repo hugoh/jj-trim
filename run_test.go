@@ -142,6 +142,27 @@ func forkCandidateJSON(
 		`"parent_change_ids":` + parentsJSON + `,"diff_hash":"` + diffHash + `"}` + "\n"
 }
 
+// forksLogKey and keptLogKey are the jj.Fake keys for the two `jj log`
+// calls classify.GitCommitDuplicates's callers make: one over
+// classify.AnonymousForks(), one over classify.KeptHistory(), both templated
+// with classify.TemplateWithDuplicateKey.
+func forksLogKey() string {
+	return jj.Key(
+		"log",
+		"-r",
+		classify.AnonymousForks(),
+		"-T",
+		classify.TemplateWithDuplicateKey,
+		"--no-graph",
+	)
+}
+
+func keptLogKey() string {
+	return jj.Key(
+		"log", "-r", classify.KeptHistory(), "-T", classify.TemplateWithDuplicateKey, "--no-graph",
+	)
+}
+
 // TestClassifyForks_SplitsGitCommitDuplicateFromOtherBuckets guards the
 // run.go wiring around classify.GitCommitDuplicates: a fork whose
 // (parents, diff hash) matches something in KeptHistory() must land in the
@@ -161,17 +182,8 @@ func TestClassifyForks_SplitsGitCommitDuplicateFromOtherBuckets(t *testing.T) {
 		"hash-hasdesc",
 	)
 
-	forksKey := jj.Key(
-		"log",
-		"-r",
-		classify.AnonymousForks(),
-		"-T",
-		classify.TemplateWithDuplicateKey,
-		"--no-graph",
-	)
-	keptKey := jj.Key(
-		"log", "-r", classify.KeptHistory(), "-T", classify.TemplateWithDuplicateKey, "--no-graph",
-	)
+	forksKey := forksLogKey()
+	keptKey := keptLogKey()
 	fake := &jj.Fake{
 		Stdout: map[string]string{
 			forksKey: orphan + noDesc + hasDesc,
@@ -1164,6 +1176,10 @@ func TestNewBookmarkContext(t *testing.T) {
 	t.Parallel()
 
 	trunk := defaultTrunkRevset
+	c := classify.Candidate{ChangeID: "c1", LocalBookmarks: []string{bookmarkFeat}}
+	keep := classify.KeepRevset(trunk, bookmarksExceptSelf(c))
+	chainKey := jj.Key("log", "-r", classify.PrivateChainRevset(c.ChangeID, keep), "-T",
+		`self.change_id().shortest() ++ "\n"`, "--no-graph")
 
 	t.Run("show error", func(t *testing.T) {
 		t.Parallel()
@@ -1179,11 +1195,6 @@ func TestNewBookmarkContext(t *testing.T) {
 	t.Run("chain query error", func(t *testing.T) {
 		t.Parallel()
 
-		c := classify.Candidate{ChangeID: "c1", LocalBookmarks: []string{bookmarkFeat}}
-		keep := classify.KeepRevset(trunk, bookmarksExceptSelf(c))
-		chainKey := jj.Key("log", "-r", classify.PrivateChainRevset(c.ChangeID, keep), "-T",
-			`self.change_id().shortest() ++ "\n"`, "--no-graph")
-
 		fake := &jj.Fake{
 			Stdout: map[string]string{jj.Key("show", "c1"): showOutputC1},
 			Errs:   map[string]error{chainKey: errors.New("boom")},
@@ -1198,11 +1209,6 @@ func TestNewBookmarkContext(t *testing.T) {
 	t.Run("empty chain reports no private commits", func(t *testing.T) {
 		t.Parallel()
 
-		c := classify.Candidate{ChangeID: "c1", LocalBookmarks: []string{bookmarkFeat}}
-		keep := classify.KeepRevset(trunk, bookmarksExceptSelf(c))
-		chainKey := jj.Key("log", "-r", classify.PrivateChainRevset(c.ChangeID, keep), "-T",
-			`self.change_id().shortest() ++ "\n"`, "--no-graph")
-
 		fake := &jj.Fake{Stdout: map[string]string{
 			jj.Key("show", "c1"): showOutputC1,
 			chainKey:             "",
@@ -1216,11 +1222,6 @@ func TestNewBookmarkContext(t *testing.T) {
 
 	t.Run("non-empty chain reports cascade", func(t *testing.T) {
 		t.Parallel()
-
-		c := classify.Candidate{ChangeID: "c1", LocalBookmarks: []string{bookmarkFeat}}
-		keep := classify.KeepRevset(trunk, bookmarksExceptSelf(c))
-		chainKey := jj.Key("log", "-r", classify.PrivateChainRevset(c.ChangeID, keep), "-T",
-			`self.change_id().shortest() ++ "\n"`, "--no-graph")
 
 		fake := &jj.Fake{Stdout: map[string]string{
 			jj.Key("show", "c1"): showOutputC1,
@@ -1709,22 +1710,8 @@ func TestRunBookmarks(t *testing.T) {
 func TestRunCommits(t *testing.T) {
 	t.Parallel()
 
-	forksKey := jj.Key(
-		"log",
-		"-r",
-		classify.AnonymousForks(),
-		"-T",
-		classify.TemplateWithDuplicateKey,
-		"--no-graph",
-	)
-	keptKey := jj.Key(
-		"log",
-		"-r",
-		classify.KeptHistory(),
-		"-T",
-		classify.TemplateWithDuplicateKey,
-		"--no-graph",
-	)
+	forksKey := forksLogKey()
+	keptKey := keptLogKey()
 
 	duplicateBuckets := []forkBucket{
 		{
@@ -1733,18 +1720,24 @@ func TestRunCommits(t *testing.T) {
 		},
 	}
 
-	t.Run("preview action summarizes without abandoning", func(t *testing.T) {
-		t.Parallel()
+	orphanKeptFake := func(t *testing.T) *jj.Fake {
+		t.Helper()
 
 		orphan := forkCandidateJSON(t, "orphan", "", []string{forkParent}, "same-hash")
 		kept := forkCandidateJSON(t, "kept", "raw git commit", []string{forkParent}, "same-hash")
 		previewRevset := forksPreviewRevset(duplicateBuckets, false)
 
-		fake := &jj.Fake{Stdout: map[string]string{
+		return &jj.Fake{Stdout: map[string]string{
 			forksKey: orphan,
 			keptKey:  kept,
 			jj.Key("log", "-r", previewRevset, "--no-pager", "--color=never"): "@ orphan\n",
 		}}
+	}
+
+	t.Run("preview action summarizes without abandoning", func(t *testing.T) {
+		t.Parallel()
+
+		fake := orphanKeptFake(t)
 
 		var out strings.Builder
 
@@ -1787,15 +1780,7 @@ func TestRunCommits(t *testing.T) {
 	t.Run("review action requires a terminal", func(t *testing.T) {
 		t.Parallel()
 
-		orphan := forkCandidateJSON(t, "orphan", "", []string{forkParent}, "same-hash")
-		kept := forkCandidateJSON(t, "kept", "raw git commit", []string{forkParent}, "same-hash")
-		previewRevset := forksPreviewRevset(duplicateBuckets, false)
-
-		fake := &jj.Fake{Stdout: map[string]string{
-			forksKey: orphan,
-			keptKey:  kept,
-			jj.Key("log", "-r", previewRevset, "--no-pager", "--color=never"): "@ orphan\n",
-		}}
+		fake := orphanKeptFake(t)
 
 		var out strings.Builder
 
