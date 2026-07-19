@@ -150,6 +150,48 @@ func TestBookmarkDelete(t *testing.T) {
 			fake.Calls[0].Args,
 		)
 	})
+
+	t.Run("names with narrow no-break spaces are not \\u-escaped", func(t *testing.T) {
+		t.Parallel()
+
+		name := "backup/slog-8-31-14 PM"
+		fake := &jj.Fake{
+			Stdout: map[string]string{
+				jj.Key(bookmarkVerb, deleteVerb, `exact:"`+name+`"`): "",
+			},
+		}
+
+		require.NoError(t, jj.BookmarkDelete(context.Background(), fake, []string{name}))
+		require.Len(t, fake.Calls, 1)
+		assert.Equal(
+			t,
+			[]string{bookmarkVerb, deleteVerb, `exact:"` + name + `"`},
+			fake.Calls[0].Args,
+		)
+	})
+}
+
+func TestExactRevsetTerm(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"plain name", "feat", `exact:"feat"`},
+		{"glob-like characters", "fix*", `exact:"fix*"`},
+		{"embedded quote", `we"ird`, `exact:"we\"ird"`},
+		{"embedded backslash", `back\slash`, `exact:"back\\slash"`},
+		{"narrow no-break space", "8-31-14 PM", "exact:\"8-31-14 PM\""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, jj.ExactRevsetTerm(tt.in))
+		})
+	}
 }
 
 func TestAbandon(t *testing.T) {

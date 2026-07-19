@@ -314,7 +314,7 @@ func bookmarksExceptSelf(c classify.Candidate) string {
 	b.WriteString("bookmarks()")
 
 	for _, name := range c.LocalBookmarks {
-		fmt.Fprintf(&b, " ~ bookmarks(exact:%q)", name)
+		fmt.Fprintf(&b, " ~ bookmarks(%s)", jj.ExactRevsetTerm(name))
 	}
 
 	return b.String()
@@ -406,7 +406,7 @@ func bookmarksPreviewRevset(trunk string, heuristicSets ...[]classify.Candidate)
 	for _, set := range heuristicSets {
 		for _, c := range set {
 			for _, name := range c.LocalBookmarks {
-				fmt.Fprintf(&b, " | bookmarks(exact:%q)", name)
+				fmt.Fprintf(&b, " | bookmarks(%s)", jj.ExactRevsetTerm(name))
 			}
 		}
 	}
