@@ -3,6 +3,7 @@ package review
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -57,6 +58,159 @@ func TestHandleDetailFetched_StaleIndexIgnored(t *testing.T) {
 
 func noopFetch(context.Context, jj.Runner, classify.Candidate) (string, error) {
 	return "context", nil
+}
+
+// detailScrollTestModel builds a ready (window-sized) model on screenList
+// with m.detail seeded with enough lines to overflow its pane height, so
+// scroll keys have visible room to move. The window is sized small (a
+// handful of rows) so the detail pane's height is small too, keeping the
+// half-page-vs-line-scroll distinction meaningful without needing a huge
+// content block.
+func detailScrollTestModel(t *testing.T) *model {
+	t.Helper()
+
+	items := []Item{
+		{
+			IDs:       []string{"w"},
+			Candidate: classify.Candidate{ChangeID: "w"},
+			Legend: classify.LegendEntry{
+				ChangeIDShort: "w",
+				Reason:        classify.ReasonNoDescription,
+			},
+		},
+	}
+
+	m := newModel(
+		t.Context(),
+		&jj.Fake{},
+		items,
+		Action{Verb: testVerbDelete, Past: testPastDeleted},
+		noopFetch,
+	)
+
+	_, _ = m.handleWindowSize(tea.WindowSizeMsg{Width: 40, Height: 12})
+
+	lines := make([]string, 0, 100)
+	for i := range 100 {
+		lines = append(lines, fmt.Sprintf("line %d", i))
+	}
+
+	m.detail.SetContent(strings.Join(lines, "\n"))
+
+	return m
+}
+
+func ctrlKey(r rune) tea.KeyPressMsg {
+	return tea.KeyPressMsg{Code: r, Mod: tea.ModCtrl}
+}
+
+// TestDetailScroll_CtrlJK_ScrollsOneLineAtATime guards ctrl+j/ctrl+k as the
+// detail pane's line-scroll keys — chosen because plain arrows/j/k are
+// already claimed by m.list's own navigation (handleListNavigation).
+func TestDetailScroll_CtrlJK_ScrollsOneLineAtATime(t *testing.T) {
+	t.Parallel()
+
+	m := detailScrollTestModel(t)
+	require.Equal(t, 0, m.detail.YOffset())
+
+	_, _ = m.handleKey(ctrlKey('j'))
+	assert.Equal(t, 1, m.detail.YOffset(), "ctrl+j should scroll down by one line")
+
+	_, _ = m.handleKey(ctrlKey('j'))
+	assert.Equal(t, 2, m.detail.YOffset())
+
+	_, _ = m.handleKey(ctrlKey('k'))
+	assert.Equal(t, 1, m.detail.YOffset(), "ctrl+k should scroll back up by one line")
+}
+
+// TestDetailScroll_CtrlDU_ScrollsHalfPage guards ctrl+d/ctrl+u as the detail
+// pane's half-page-scroll keys, matching vim's own convention.
+func TestDetailScroll_CtrlDU_ScrollsHalfPage(t *testing.T) {
+	t.Parallel()
+
+	m := detailScrollTestModel(t)
+	half := m.detail.Height() / 2
+
+	_, _ = m.handleKey(ctrlKey('d'))
+	assert.Equal(t, half, m.detail.YOffset(), "ctrl+d should scroll down half a page")
+
+	_, _ = m.handleKey(ctrlKey('u'))
+	assert.Equal(t, 0, m.detail.YOffset(), "ctrl+u should scroll back up half a page")
+}
+
+// TestDetailScroll_DoesNotMoveListCursorOrTriggerMarkKeys guards the
+// precedence handleDetailScrollKey needs over handleListMarkKey/
+// handleListNavigation: ctrl+j/k/d/u must never leak through as list
+// movement or as a mark key, even though 'd' alone is this model's action
+// mark key (testVerbDelete's markKey is "d").
+func TestDetailScroll_DoesNotMoveListCursorOrTriggerMarkKeys(t *testing.T) {
+	t.Parallel()
+
+	m := detailScrollTestModel(t)
+	before := m.list.Index()
+
+	_, _ = m.handleKey(ctrlKey('j'))
+	_, _ = m.handleKey(ctrlKey('k'))
+	_, _ = m.handleKey(ctrlKey('d'))
+	_, _ = m.handleKey(ctrlKey('u'))
+
+	assert.Equal(t, before, m.list.Index(), "detail scroll keys must not move the list cursor")
+	assert.Equal(t, decisionPending, m.items[0].decision,
+		"ctrl+d must not be treated as the plain 'd' mark key")
+}
+
+// TestDetailScroll_ResetsOnCursorMove guards against a scrolled-down detail
+// pane leaking its offset into the next-selected item's content, which
+// would show that item's detail starting mid-way down instead of at top.
+func TestDetailScroll_ResetsOnCursorMove(t *testing.T) {
+	t.Parallel()
+
+	items := []Item{
+		{
+			IDs:       []string{"w"},
+			Candidate: classify.Candidate{ChangeID: "w"},
+			Legend: classify.LegendEntry{
+				ChangeIDShort: "w",
+				Reason:        classify.ReasonNoDescription,
+			},
+		},
+		{
+			IDs:       []string{"a"},
+			Candidate: classify.Candidate{ChangeID: "a"},
+			Legend: classify.LegendEntry{
+				ChangeIDShort: "a",
+				Reason:        classify.ReasonHasDescription,
+			},
+		},
+	}
+
+	m := newModel(
+		t.Context(),
+		&jj.Fake{},
+		items,
+		Action{Verb: testVerbDelete, Past: testPastDeleted},
+		noopFetch,
+	)
+	_, _ = m.handleWindowSize(tea.WindowSizeMsg{Width: 40, Height: 12})
+
+	lines := make([]string, 0, 100)
+	for i := range 100 {
+		lines = append(lines, fmt.Sprintf("line %d", i))
+	}
+
+	m.detail.SetContent(strings.Join(lines, "\n"))
+
+	_, _ = m.handleKey(ctrlKey('j'))
+	require.Positive(t, m.detail.YOffset())
+
+	_, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyDown})
+
+	assert.Equal(
+		t,
+		0,
+		m.detail.YOffset(),
+		"moving the list cursor should reset the detail pane's scroll",
+	)
 }
 
 // TestResultFromFinalModel_KeepsResultAlongsideError guards the bug Run
