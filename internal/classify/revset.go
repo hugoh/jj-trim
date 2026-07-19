@@ -23,8 +23,18 @@ func MergedBookmarks(trunk string) string {
 // command's heuristic lenses (ProbablyMerged, Stale) examine, since a
 // squash-merged or long-abandoned bookmark never becomes a graph-ancestor
 // of trunk even though it's just as safe to clean up.
+//
+// `~ immutable()` excludes bookmarks whose own tip commit jj won't let
+// cascade-abandon touch — typically a remote-tracked branch jj protects
+// as published even though its content already landed in trunk under a
+// different commit (a squash-merge whose remote branch was never
+// cleaned up). Without this, jj-trim offers such a bookmark for cascade
+// and jj then rejects the whole cascade batch outright, taking every
+// other bookmark's cleanup down with it (cascade-abandon's private-chain
+// revset always includes the candidate's own commit — see
+// PrivateChainRevset).
 func UnmergedBookmarks(trunk string) string {
-	return fmt.Sprintf("bookmarks() ~ ::(%s)", trunk)
+	return fmt.Sprintf("bookmarks() ~ ::(%s) ~ immutable()", trunk)
 }
 
 // AnonymousForks returns the revset for the `commits` command's candidate

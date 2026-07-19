@@ -105,6 +105,66 @@ func repoWithProtectedBookmark(t *testing.T) string {
 	return initRepo(t)
 }
 
+// runGit runs a real git command (not one of jj's own `jj git`
+// subcommands, which can't do everything raw git can — e.g. `git init
+// --bare`) inside dir and requires it to succeed.
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+
+	//nolint:gosec // test helper, args are test-controlled fixtures
+	cmd := exec.CommandContext(context.Background(), "git", args...)
+	cmd.Dir = dir
+
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "git %v: %s", args, out)
+}
+
+// repoWithPushedBookmark creates a temp repo with a bare git remote and a
+// bookmark already pushed to it via `jj git push` (which auto-tracks the
+// bookmark it just pushed), returning the working repo dir and the pushed
+// bookmark's name.
+func repoWithPushedBookmark(t *testing.T) (string, string) {
+	t.Helper()
+
+	dir := initRepo(t)
+	remote := t.TempDir()
+	runGit(t, remote, "init", "--bare", ".")
+	runIn(t, dir, "git", "remote", "add", "origin", remote)
+	runIn(t, dir, "new", "main", "-m", "feature work")
+
+	const name = "pushed"
+
+	runIn(t, dir, "bookmark", "create", name, "-r", "@")
+	runIn(t, dir, "git", "push", "--bookmark", name)
+
+	return dir, name
+}
+
+// repoWithUntrackedRemoteBookmark creates a temp repo with a bare git
+// remote and a bookmark pushed to it via plain `git push` (not `jj git
+// push`, which auto-tracks the bookmark it just pushed) — the case for a
+// branch pushed by a tool other than jj itself (a colocated repo's `git
+// push`, GitHub's web UI, `gh pr create`, ...). Returns the working repo
+// dir and the bookmark's name. The colocated repo's git backend has the
+// pushed ref immediately; jj itself imports it lazily on its next
+// invocation in dir, so no explicit `jj git import` is needed here.
+func repoWithUntrackedRemoteBookmark(t *testing.T) (string, string) {
+	t.Helper()
+
+	dir := initRepo(t)
+	remote := t.TempDir()
+	runGit(t, remote, "init", "--bare", ".")
+	runIn(t, dir, "git", "remote", "add", "origin", remote)
+	runIn(t, dir, "new", "main", "-m", "feature work")
+
+	const name = "external"
+
+	runIn(t, dir, "bookmark", "create", name, "-r", "@")
+	runGit(t, dir, "push", "origin", name)
+
+	return dir, name
+}
+
 // dirRunner is a Runner backed by the real jj binary, scoped to a fixed
 // working directory, for integration tests against a temp repo.
 type dirRunner struct {
@@ -197,6 +257,24 @@ func TestLog_RealRepo_ProtectedTrunkBookmark(t *testing.T) {
 		`self.change_id().shortest()`)
 	require.NoError(t, err)
 	require.Empty(t, strings.TrimSpace(out))
+}
+
+func TestLog_RealRepo_PushedBookmark_NotImmutableWhileTracked(t *testing.T) {
+	t.Parallel()
+	requireJJ(t)
+
+	dir, name := repoWithPushedBookmark(t)
+	r := dirRunner{dir: dir}
+
+	out, err := jj.Log(
+		context.Background(),
+		r,
+		fmt.Sprintf("bookmarks(%s) & immutable()", jj.ExactRevsetTerm(name)),
+		`self.change_id().shortest()`,
+	)
+	require.NoError(t, err)
+	require.Empty(t, strings.TrimSpace(out),
+		"a bookmark just pushed and still tracked locally must not be immutable")
 }
 
 func TestBookmarkDelete_RealRepo(t *testing.T) {
@@ -548,4 +626,50 @@ func TestGitCommitDuplicate_RealRepo(t *testing.T) {
 	require.Empty(t, rest)
 	require.False(t, duplicates[0].HasDescription(),
 		"the orphaned commit is jj's own working-copy commit, which is never described")
+}
+
+func TestLog_RealRepo_UntrackedRemoteBookmark_IsImmutable(t *testing.T) {
+	t.Parallel()
+	requireJJ(t)
+
+	dir, name := repoWithUntrackedRemoteBookmark(t)
+	r := dirRunner{dir: dir}
+
+	out, err := jj.Log(context.Background(), r,
+		fmt.Sprintf("bookmarks(%s) & immutable()", jj.ExactRevsetTerm(name)),
+		`self.change_id().shortest()`)
+	require.NoError(t, err)
+	require.NotEmpty(t, strings.TrimSpace(out),
+		"a bookmark pushed via plain git (not jj git push) stays untracked, "+
+			"and jj's default immutable_heads() protects untracked remote bookmarks")
+}
+
+func TestUnmergedBookmarks_RealRepo_ExcludesUntrackedRemoteBookmark(t *testing.T) {
+	t.Parallel()
+	requireJJ(t)
+
+	dir, name := repoWithUntrackedRemoteBookmark(t)
+	r := dirRunner{dir: dir}
+
+	out, err := jj.Log(
+		context.Background(),
+		r,
+		classify.UnmergedBookmarks("main"),
+		classify.Template,
+	)
+	require.NoError(t, err)
+
+	candidates, err := classify.ParseCandidates(out)
+	require.NoError(t, err)
+
+	for _, c := range candidates {
+		for _, n := range c.LocalBookmarks {
+			require.NotEqual(
+				t,
+				name,
+				n,
+				"an untracked-remote (thus immutable) bookmark must not be offered as a cleanup candidate",
+			)
+		}
+	}
 }
