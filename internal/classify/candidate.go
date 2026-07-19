@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -185,6 +186,34 @@ const (
 	initialScanBufferSize = 64 * 1024
 )
 
+// diffHashTemplateError matches jj rendering hash(self.diff().git())'s
+// Stringify step failing on a binary diff (e.g. a commit touching an
+// encrypted/binary file) as a bare, unquoted `<Error: ...>` in place of the
+// diff_hash string value — which otherwise breaks the whole line's JSON.
+var diffHashTemplateError = regexp.MustCompile(`"diff_hash":<Error:[^}]*>}$`)
+
+// repairDiffHashTemplateError rewrites a diffHashTemplateError match into a
+// valid (quoted) diff_hash string, so one commit's binary diff can't take
+// down parsing for the entire batch. The recovered value just needs to be
+// stable and distinct from any real hash — it naturally excludes that
+// commit from GitCommitDuplicates matches, which is the correct outcome
+// since its real diff hash is unknown.
+func repairDiffHashTemplateError(line string) string {
+	loc := diffHashTemplateError.FindStringIndex(line)
+	if loc == nil {
+		return line
+	}
+
+	errText := line[loc[0]+len(`"diff_hash":`) : loc[1]-len("}")]
+
+	repaired, err := json.Marshal(errText)
+	if err != nil {
+		return line
+	}
+
+	return line[:loc[0]] + `"diff_hash":` + string(repaired) + "}"
+}
+
 // ParseCandidates parses jj's JSONL output (one Candidate per line,
 // produced by Template) into a slice of Candidate.
 func ParseCandidates(jsonl string) ([]Candidate, error) {
@@ -198,6 +227,8 @@ func ParseCandidates(jsonl string) ([]Candidate, error) {
 		if line == "" {
 			continue
 		}
+
+		line = repairDiffHashTemplateError(line)
 
 		var c Candidate
 		if err := json.Unmarshal([]byte(line), &c); err != nil {
