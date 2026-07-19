@@ -223,7 +223,7 @@ func TestResultFromFinalModel_KeepsResultAlongsideError(t *testing.T) {
 		"self.id().short() ++ \"\\n\""), "abc123\n"
 	fake := &jj.Fake{
 		Stdout: map[string]string{
-			jj.Key("bookmark", testVerbDelete, "exact:w", "exact:a"): "",
+			jj.Key("bookmark", testVerbDelete, `exact:"w"`, `exact:"a"`): "",
 			opKey: opOut,
 		},
 		Errs: map[string]error{jj.Key(testVerbAbandon, "chain-a"): errors.New("boom")},

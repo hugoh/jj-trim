@@ -44,7 +44,7 @@ func TestApplyMerged_UndoMessage_UsesOpRevert(t *testing.T) {
 
 	fake := &jj.Fake{
 		Stdout: map[string]string{
-			jj.Key("bookmark", "delete", "exact:feat"): "",
+			jj.Key("bookmark", "delete", `exact:"feat"`): "",
 			jj.Key("op", "log", "--no-graph", "--limit", "1", "-T",
 				"self.id().short() ++ \"\\n\""): "abc123\n",
 		},

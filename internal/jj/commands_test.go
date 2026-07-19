@@ -80,6 +80,11 @@ func TestShow(t *testing.T) {
 	assert.Equal(t, "Change abc123\n", out)
 }
 
+const (
+	bookmarkVerb = "bookmark"
+	deleteVerb   = "delete"
+)
+
 func TestBookmarkDelete(t *testing.T) {
 	t.Parallel()
 
@@ -93,13 +98,17 @@ func TestBookmarkDelete(t *testing.T) {
 
 		fake := &jj.Fake{
 			Stdout: map[string]string{
-				jj.Key("bookmark", "delete", "exact:a", "exact:b"): "",
+				jj.Key(bookmarkVerb, deleteVerb, `exact:"a"`, `exact:"b"`): "",
 			},
 		}
 
 		require.NoError(t, jj.BookmarkDelete(context.Background(), fake, []string{"a", "b"}))
 		require.Len(t, fake.Calls, 1)
-		assert.Equal(t, []string{"bookmark", "delete", "exact:a", "exact:b"}, fake.Calls[0].Args)
+		assert.Equal(
+			t,
+			[]string{bookmarkVerb, deleteVerb, `exact:"a"`, `exact:"b"`},
+			fake.Calls[0].Args,
+		)
 	})
 
 	t.Run("names with glob-like characters are matched literally", func(t *testing.T) {
@@ -107,7 +116,7 @@ func TestBookmarkDelete(t *testing.T) {
 
 		fake := &jj.Fake{
 			Stdout: map[string]string{
-				jj.Key("bookmark", "delete", "exact:release:1.0", "exact:fix*"): "",
+				jj.Key(bookmarkVerb, deleteVerb, `exact:"release:1.0"`, `exact:"fix*"`): "",
 			},
 		}
 
@@ -118,7 +127,26 @@ func TestBookmarkDelete(t *testing.T) {
 		require.Len(t, fake.Calls, 1)
 		assert.Equal(
 			t,
-			[]string{"bookmark", "delete", "exact:release:1.0", "exact:fix*"},
+			[]string{bookmarkVerb, deleteVerb, `exact:"release:1.0"`, `exact:"fix*"`},
+			fake.Calls[0].Args,
+		)
+	})
+
+	t.Run("names with spaces are quoted", func(t *testing.T) {
+		t.Parallel()
+
+		name := "backup/refactor/slog-8-14-52 PM"
+		fake := &jj.Fake{
+			Stdout: map[string]string{
+				jj.Key(bookmarkVerb, deleteVerb, `exact:"`+name+`"`): "",
+			},
+		}
+
+		require.NoError(t, jj.BookmarkDelete(context.Background(), fake, []string{name}))
+		require.Len(t, fake.Calls, 1)
+		assert.Equal(
+			t,
+			[]string{bookmarkVerb, deleteVerb, `exact:"` + name + `"`},
 			fake.Calls[0].Args,
 		)
 	})
