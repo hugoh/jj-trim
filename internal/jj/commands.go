@@ -60,7 +60,7 @@ func BookmarkDelete(ctx context.Context, r Runner, names []string) error {
 
 	args := []string{"bookmark", "delete"}
 	for _, name := range names {
-		args = append(args, "exact:"+name)
+		args = append(args, fmt.Sprintf("exact:%q", name))
 	}
 
 	if _, err := r.Run(ctx, args...); err != nil {

@@ -125,7 +125,7 @@ func TestResultFromFinishedModel_ChildErrorKeepsResult(t *testing.T) {
 	}
 	fake := &jj.Fake{
 		Stdout: map[string]string{
-			jj.Key("bookmark", testVerbDelete, "exact:w", "exact:a"): "",
+			jj.Key("bookmark", testVerbDelete, `exact:"w"`, `exact:"a"`): "",
 			jj.Key("op", "log", "--no-graph", "--limit", "1", "-T",
 				"self.id().short() ++ \"\\n\""): testOpID + "\n",
 		},

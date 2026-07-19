@@ -28,7 +28,7 @@ const (
 	chainW        = "chain-w"
 	chainA        = "chain-a"
 	bookmarkVerb  = "bookmark"
-	exactW        = "exact:w"
+	exactW        = `exact:"w"`
 )
 
 func testItems(t *testing.T) []review.Item {
@@ -276,10 +276,10 @@ func TestReview_MixedActionAndCascade_RunsTwoBatches(t *testing.T) {
 
 	fake := &jj.Fake{
 		Stdout: map[string]string{
-			jj.Key(bookmarkVerb, verbDelete, exactW, "exact:a"): "",
-			jj.Key(verbAbandon, chainA):                         "",
-			jj.Key("op", "show", "op-id"):                       "",
-			jj.Key("op", "show", "op-id-2"):                     "",
+			jj.Key(bookmarkVerb, verbDelete, exactW, `exact:"a"`): "",
+			jj.Key(verbAbandon, chainA):                           "",
+			jj.Key("op", "show", "op-id"):                         "",
+			jj.Key("op", "show", "op-id-2"):                       "",
 		},
 		StdoutSeq: map[string][]string{opLogKey: opLogVals},
 	}
@@ -302,7 +302,7 @@ func TestReview_MixedActionAndCascade_RunsTwoBatches(t *testing.T) {
 	// its after-check op-log, and two `jj op show` fetches for the
 	// applied popup.
 	require.Len(t, fake.Calls, 7)
-	assert.Equal(t, []string{bookmarkVerb, verbDelete, exactW, "exact:a"}, fake.Calls[0].Args)
+	assert.Equal(t, []string{bookmarkVerb, verbDelete, exactW, `exact:"a"`}, fake.Calls[0].Args)
 	assert.Equal(t, []string{verbAbandon, chainA}, fake.Calls[3].Args)
 }
 
@@ -325,7 +325,7 @@ func TestReview_PrimarySucceedsCascadeFails_KeepsPrimaryResult(t *testing.T) {
 	opKey, opOut := opLogStdout("abc123")
 	fake := &jj.Fake{
 		Stdout: map[string]string{
-			jj.Key(bookmarkVerb, verbDelete, exactW, "exact:a"): "",
+			jj.Key(bookmarkVerb, verbDelete, exactW, `exact:"a"`): "",
 			opKey: opOut,
 		},
 		Errs: map[string]error{

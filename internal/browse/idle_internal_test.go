@@ -153,7 +153,7 @@ func deleteOneItemFake(t *testing.T) *jj.Fake {
 
 	return &jj.Fake{
 		Stdout: map[string]string{
-			jj.Key("bookmark", testVerbDelete, "exact:w"): "",
+			jj.Key("bookmark", testVerbDelete, `exact:"w"`): "",
 			jj.Key("op", "log", "--no-graph", "--limit", "1", "-T",
 				"self.id().short() ++ \"\\n\""): testOpID + "\n",
 		},
