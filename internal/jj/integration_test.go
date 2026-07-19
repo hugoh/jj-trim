@@ -46,15 +46,16 @@ func runIn(t *testing.T, dir string, args ...string) string {
 	return string(out)
 }
 
-// configureGitIdentity sets a local git user.name/user.email in dir — CI
-// runners don't have a global one configured, unlike most dev machines, and
-// jj falls back to git's identity when its own isn't set, which some
-// operations (a raw `git commit`, `jj git push`) require to be present.
-func configureGitIdentity(t *testing.T, dir string) {
+// configureJJIdentity sets jj's own (repo-level) user.name/user.email in
+// dir — CI runners don't have one configured, unlike most dev machines, and
+// jj commits made with the empty identity that results can't be pushed
+// (`jj git push` rejects them outright). Unlike git, jj never falls back to
+// reading git's own user.name/user.email config for this.
+func configureJJIdentity(t *testing.T, dir string) {
 	t.Helper()
 
-	runGit(t, dir, "config", "user.email", "test@example.com")
-	runGit(t, dir, "config", "user.name", "Test")
+	runIn(t, dir, "config", "set", "--repo", "user.email", "test@example.com")
+	runIn(t, dir, "config", "set", "--repo", "user.name", "Test")
 }
 
 // initRepo creates a temp repo with a git repo initialized and a "main"
@@ -64,7 +65,7 @@ func initRepo(t *testing.T) string {
 
 	dir := t.TempDir()
 	runIn(t, dir, "git", "init")
-	configureGitIdentity(t, dir)
+	configureJJIdentity(t, dir)
 	runIn(t, dir, "describe", "-m", "root change")
 	runIn(t, dir, "bookmark", "create", "main", "-r", "@")
 
@@ -570,7 +571,14 @@ func TestGitCommitDuplicate_RealRepo(t *testing.T) {
 
 	dir := t.TempDir()
 	runIn(t, dir, "git", "init", "--colocate")
-	configureGitIdentity(t, dir)
+	configureJJIdentity(t, dir)
+
+	// The raw `git commit` below is real git, not jj — it needs its own
+	// git-level identity, which jj's user config (just set above) doesn't
+	// supply.
+	runGit(t, dir, "config", "user.email", "test@example.com")
+	runGit(t, dir, "config", "user.name", "Test")
+
 	runIn(t, dir, "describe", "-m", "root change")
 	runIn(t, dir, "bookmark", "create", "main", "-r", "@")
 
