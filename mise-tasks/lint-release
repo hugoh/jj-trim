@@ -1,3 +1,4 @@
 #!/usr/bin/env bash
 #MISE description="Check release config if present"
+#MISE sources=[".goreleaser.yml"]
 test ! -f .goreleaser.yml || goreleaser check

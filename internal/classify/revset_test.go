@@ -31,7 +31,7 @@ func TestUnmergedBookmarks(t *testing.T) {
 	t.Parallel()
 
 	got := classify.UnmergedBookmarks("trunk()")
-	assert.Equal(t, "bookmarks() ~ ::(trunk())", got)
+	assert.Equal(t, "bookmarks() ~ ::(trunk()) ~ immutable()", got)
 }
 
 func TestAnonymousForks(t *testing.T) {
@@ -45,6 +45,12 @@ func TestAnonymousForksNoDescription(t *testing.T) {
 
 	got := classify.AnonymousForksNoDescription()
 	assert.Equal(t, `(heads(mutable()) ~ bookmarks() ~ @) & description("")`, got)
+}
+
+func TestKeptHistory(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "(::@ | bookmarks()) ~ root()", classify.KeptHistory())
 }
 
 func TestChangeIDRevset(t *testing.T) {

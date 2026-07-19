@@ -2,6 +2,7 @@ package jj_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -79,6 +80,53 @@ func TestFake_StdoutSeq_TakesPriorityOverStdout(t *testing.T) {
 	out, err := fake.Run(context.Background(), "op", "log")
 	require.NoError(t, err)
 	assert.Equal(t, "from-seq\n", out)
+}
+
+// TestFake_Run_NoCannedResponse guards Run's fallback branch: an args
+// combination with neither a Stdout nor an Errs entry returns
+// ErrNoCannedResponse.
+func TestFake_Run_NoCannedResponse(t *testing.T) {
+	t.Parallel()
+
+	fake := &jj.Fake{}
+
+	out, err := fake.Run(context.Background(), "log")
+	require.ErrorIs(t, err, jj.ErrNoCannedResponse)
+	assert.Empty(t, out)
+}
+
+// TestFake_Stream_CannedError guards Stream's Errs branch: a canned error
+// for the key is returned as-is, without writing anything to w.
+func TestFake_Stream_CannedError(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("stream failed")
+	fake := &jj.Fake{
+		Errs: map[string]error{
+			jj.Key("log"): wantErr,
+		},
+	}
+
+	var buf strings.Builder
+
+	err := fake.Stream(context.Background(), &buf, "log")
+	require.ErrorIs(t, err, wantErr)
+	assert.Empty(t, buf.String())
+}
+
+// TestFake_Stream_NoCannedResponse guards Stream's fallback branch: an args
+// combination with neither a Stdout nor an Errs entry returns
+// ErrNoCannedResponse.
+func TestFake_Stream_NoCannedResponse(t *testing.T) {
+	t.Parallel()
+
+	fake := &jj.Fake{}
+
+	var buf strings.Builder
+
+	err := fake.Stream(context.Background(), &buf, "log")
+	require.ErrorIs(t, err, jj.ErrNoCannedResponse)
+	assert.Empty(t, buf.String())
 }
 
 func concurrentFake() *jj.Fake {

@@ -9,6 +9,15 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestAltScreenView(t *testing.T) {
+	t.Parallel()
+
+	v := tuistyle.AltScreenView("hello")
+
+	assert.True(t, v.AltScreen)
+	assert.Equal(t, "hello", v.Content)
+}
+
 func TestNew_DarkMode(t *testing.T) {
 	t.Parallel()
 

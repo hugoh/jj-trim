@@ -48,6 +48,38 @@ func Show(ctx context.Context, r Runner, changeID string) (string, error) {
 	return out, nil
 }
 
+// ExactRevsetTerm renders name as a literal `exact:"..."` revset term.
+// Deliberately not fmt's %q: it \uXXXX-escapes runes like U+202F (seen in
+// macOS backup-bookmark names), an escape jj's revset grammar can't parse.
+func ExactRevsetTerm(name string) string {
+	var b strings.Builder
+
+	b.WriteString(`exact:"`)
+
+	for _, r := range name {
+		switch r {
+		case '\\':
+			b.WriteString(`\\`)
+		case '"':
+			b.WriteString(`\"`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		case 0:
+			b.WriteString(`\0`)
+		default:
+			b.WriteRune(r)
+		}
+	}
+
+	b.WriteByte('"')
+
+	return b.String()
+}
+
 // BookmarkDelete deletes the named bookmarks in a single batch call. Each
 // name is prefixed with "exact:" since jj 0.36.0 parses `bookmark delete`
 // arguments as string patterns (glob by default), not literal names — a
@@ -60,7 +92,7 @@ func BookmarkDelete(ctx context.Context, r Runner, names []string) error {
 
 	args := []string{"bookmark", "delete"}
 	for _, name := range names {
-		args = append(args, fmt.Sprintf("exact:%q", name))
+		args = append(args, ExactRevsetTerm(name))
 	}
 
 	if _, err := r.Run(ctx, args...); err != nil {

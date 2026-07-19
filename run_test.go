@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"strings"
 	"syscall"
 	"testing"
@@ -109,6 +111,12 @@ const (
 	globReleaseStar         = "release/*"
 	globReleaseWip          = "release/[wip]"
 	selfChangeID            = "self"
+
+	bookmarkNameProbably = "probably"
+	bookmarkNameStale    = "stale"
+	showOutputC1         = "show output\n"
+	showC1               = "show\n"
+	noCandidatesOutput   = "(no candidates)\n"
 )
 
 // forkCandidateJSON builds one classify.Template-shaped JSONL line for
@@ -134,6 +142,27 @@ func forkCandidateJSON(
 		`"parent_change_ids":` + parentsJSON + `,"diff_hash":"` + diffHash + `"}` + "\n"
 }
 
+// forksLogKey and keptLogKey are the jj.Fake keys for the two `jj log`
+// calls classify.GitCommitDuplicates's callers make: one over
+// classify.AnonymousForks(), one over classify.KeptHistory(), both templated
+// with classify.TemplateWithDuplicateKey.
+func forksLogKey() string {
+	return jj.Key(
+		"log",
+		"-r",
+		classify.AnonymousForks(),
+		"-T",
+		classify.TemplateWithDuplicateKey,
+		"--no-graph",
+	)
+}
+
+func keptLogKey() string {
+	return jj.Key(
+		"log", "-r", classify.KeptHistory(), "-T", classify.TemplateWithDuplicateKey, "--no-graph",
+	)
+}
+
 // TestClassifyForks_SplitsGitCommitDuplicateFromOtherBuckets guards the
 // run.go wiring around classify.GitCommitDuplicates: a fork whose
 // (parents, diff hash) matches something in KeptHistory() must land in the
@@ -153,17 +182,8 @@ func TestClassifyForks_SplitsGitCommitDuplicateFromOtherBuckets(t *testing.T) {
 		"hash-hasdesc",
 	)
 
-	forksKey := jj.Key(
-		"log",
-		"-r",
-		classify.AnonymousForks(),
-		"-T",
-		classify.TemplateWithDuplicateKey,
-		"--no-graph",
-	)
-	keptKey := jj.Key(
-		"log", "-r", classify.KeptHistory(), "-T", classify.TemplateWithDuplicateKey, "--no-graph",
-	)
+	forksKey := forksLogKey()
+	keptKey := keptLogKey()
 	fake := &jj.Fake{
 		Stdout: map[string]string{
 			forksKey: orphan + noDesc + hasDesc,
@@ -749,6 +769,1072 @@ func TestAgeAndDiffStat(t *testing.T) {
 	got := ageAndDiffStat(c)
 	assert.Contains(t, got, "2 hours old")
 	assert.Contains(t, got, "3 files changed, +45/-2")
+}
+
+// bookmarkCandidateJSON builds one classify.Template-shaped JSONL line for
+// bookmarks-side tests that need to control local_bookmarks/
+// commit_timestamp/has_tracked_remote directly (the fields
+// heuristicBookmarks' ProbablyMerged/Stale branches key on) without a real
+// jj binary. Mirrors forkCandidateJSON's role for the commits side.
+func bookmarkCandidateJSON(
+	t *testing.T,
+	changeID, description string,
+	localBookmarks []string,
+	commitTimestamp time.Time,
+) string {
+	t.Helper()
+
+	bookmarksJSON := "[]"
+	if len(localBookmarks) > 0 {
+		bookmarksJSON = `["` + strings.Join(localBookmarks, `","`) + `"]`
+	}
+
+	return `{"change_id":"` + changeID + `","change_id_short":{"prefix":"` + changeID +
+		`","rest":""},"description":"` + description +
+		`","local_bookmarks":` + bookmarksJSON +
+		`,"commit_timestamp":"` + commitTimestamp.UTC().Format(time.RFC3339) + `",` +
+		`"files_changed":1,"lines_added":1,"lines_removed":0,"has_tracked_remote":false}` + "\n"
+}
+
+// newTempJJRepo creates a throwaway jj repo (no git remote) for the Run/run
+// tests below that exercise dispatch through a real jj.ExecRunner: unlike
+// every other function in this package, Run and run build their own runner
+// internally rather than accepting an injected jj.Runner, so they can't be
+// driven by jj.Fake — a real (but tiny, network-free) repo is the only way
+// to exercise their success paths.
+func newTempJJRepo(t *testing.T) string {
+	t.Helper()
+
+	dir := t.TempDir()
+
+	cmd := exec.CommandContext(t.Context(), "jj", "git", "init")
+	cmd.Dir = dir
+
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "jj git init: %s", out)
+
+	return dir
+}
+
+func TestRun_BadFlag_ReturnsExitUsage(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+
+	code := Run(testVersion, []string{"--not-a-real-flag"}, strings.NewReader(""), &stdout, &stderr)
+	assert.Equal(t, exitUsage, code)
+	assert.NotEmpty(t, stderr.String())
+}
+
+func TestRun_UnknownSubcommand_ReturnsExitUsage(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+
+	code := Run(testVersion, []string{"frobnicate"}, strings.NewReader(""), &stdout, &stderr)
+	assert.Equal(t, exitUsage, code)
+	assert.NotEmpty(t, stderr.String())
+}
+
+// TestRun_VersionFlag_PrintsVersionAndExitsOK guards Run's exitEarly path
+// (kong.Exit's hook firing on --version before Parse ever reaches run()).
+func TestRun_VersionFlag_PrintsVersionAndExitsOK(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+
+	code := Run("1.2.3", []string{"--version"}, strings.NewReader(""), &stdout, &stderr)
+	assert.Equal(t, exitOK, code)
+	assert.Contains(t, stdout.String(), "1.2.3")
+}
+
+// TestRun_FetchFailure_ReturnsExitRuntime guards Run's exitRuntime path: a
+// real (but instantly-failing, no network needed) jj invocation against a
+// nonexistent repository directory.
+func TestRun_FetchFailure_ReturnsExitRuntime(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr strings.Builder
+
+	args := []string{
+		"-R", "/definitely/does/not/exist/jj-trim-test-repo",
+		"--fetch", cmdGroupBookmarks, cmdLeafPreview,
+	}
+	code := Run(testVersion, args, strings.NewReader(""), &stdout, &stderr)
+	assert.Equal(t, exitRuntime, code)
+	assert.Contains(t, stderr.String(), "error:")
+}
+
+func TestRun_BookmarksPreview_RealRepo_ReturnsExitOK(t *testing.T) {
+	t.Parallel()
+
+	dir := newTempJJRepo(t)
+
+	var stdout, stderr strings.Builder
+
+	args := []string{"-R", dir, cmdGroupBookmarks, cmdLeafPreview}
+	code := Run(testVersion, args, strings.NewReader(""), &stdout, &stderr)
+	assert.Equal(t, exitOK, code, "stderr: %s", stderr.String())
+	assert.Empty(t, stderr.String())
+}
+
+func TestRun_CommitsPreview_RealRepo_ReturnsExitOK(t *testing.T) {
+	t.Parallel()
+
+	dir := newTempJJRepo(t)
+
+	var stdout, stderr strings.Builder
+
+	args := []string{"-R", dir, cmdGroupCommits, cmdLeafPreview}
+	code := Run(testVersion, args, strings.NewReader(""), &stdout, &stderr)
+	assert.Equal(t, exitOK, code, "stderr: %s", stderr.String())
+	assert.Empty(t, stderr.String())
+}
+
+func TestRunDispatch_UnknownCommandNoSpace_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	err := run(context.Background(), CLI{}, "bogus", strings.NewReader(""), &strings.Builder{})
+	assert.ErrorIs(t, err, errUnknownCommand)
+}
+
+func TestRunDispatch_UnknownGroup_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	err := run(
+		context.Background(),
+		CLI{},
+		"frobnicate preview",
+		strings.NewReader(""),
+		&strings.Builder{},
+	)
+	assert.ErrorIs(t, err, errUnknownCommand)
+}
+
+func TestRunDispatch_Tui_NonInteractive_FailsFast(t *testing.T) {
+	t.Parallel()
+
+	err := run(context.Background(), CLI{}, cmdTui, strings.NewReader(""), &strings.Builder{})
+	require.ErrorIs(t, err, tty.ErrNotInteractive)
+	assert.Contains(t, err.Error(), "checking tui prerequisites")
+}
+
+// TestRunDispatch_FetchError_RealJJ_WrapsError guards run's cli.Fetch
+// error-wrapping branch. It uses a real jj.ExecRunner (run builds its own,
+// non-injectable) against a nonexistent directory, which fails instantly
+// with no network access needed.
+func TestRunDispatch_FetchError_RealJJ_WrapsError(t *testing.T) {
+	t.Parallel()
+
+	cli := CLI{Fetch: true, Repository: "/definitely/does/not/exist/jj-trim-test-repo"}
+	err := run(
+		context.Background(),
+		cli,
+		cmdGroupBookmarks+" "+cmdLeafPreview,
+		strings.NewReader(""),
+		&strings.Builder{},
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "jj git fetch")
+}
+
+func TestRunDispatch_BookmarksPreview_RealRepo_Succeeds(t *testing.T) {
+	t.Parallel()
+
+	dir := newTempJJRepo(t)
+	cli := CLI{Repository: dir}
+
+	var out strings.Builder
+
+	err := run(
+		context.Background(),
+		cli,
+		cmdGroupBookmarks+" "+cmdLeafPreview,
+		strings.NewReader(""),
+		&out,
+	)
+	require.NoError(t, err)
+}
+
+func TestRunDispatch_CommitsPreview_RealRepo_Succeeds(t *testing.T) {
+	t.Parallel()
+
+	dir := newTempJJRepo(t)
+	cli := CLI{Repository: dir}
+
+	var out strings.Builder
+
+	err := run(
+		context.Background(),
+		cli,
+		cmdGroupCommits+" "+cmdLeafPreview,
+		strings.NewReader(""),
+		&out,
+	)
+	require.NoError(t, err)
+}
+
+func TestMergedBookmarks(t *testing.T) {
+	t.Parallel()
+
+	trunk := defaultTrunkRevset
+	key := jj.Key(
+		"log",
+		"-r",
+		classify.MergedBookmarks(trunk),
+		"-T",
+		classify.Template,
+		"--no-graph",
+	)
+
+	t.Run("query error", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{Errs: map[string]error{key: errors.New("boom")}}
+
+		_, err := mergedBookmarks(context.Background(), fake, trunk, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "querying merged bookmarks")
+	})
+
+	t.Run("parse error", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{Stdout: map[string]string{key: "not json\n"}}
+
+		_, err := mergedBookmarks(context.Background(), fake, trunk, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "parsing merged bookmarks")
+	})
+
+	t.Run("filters protected", func(t *testing.T) {
+		t.Parallel()
+
+		now := time.Now()
+		fake := &jj.Fake{Stdout: map[string]string{
+			key: bookmarkCandidateJSON(t, "a", "", []string{bookmarkReleaseV2}, now) +
+				bookmarkCandidateJSON(t, "b", "", []string{bookmarkFeat}, now),
+		}}
+
+		got, err := mergedBookmarks(context.Background(), fake, trunk, []string{globReleaseStar})
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+		assert.Equal(t, "b", got[0].ChangeID)
+	})
+}
+
+func TestHeuristicBookmarks(t *testing.T) {
+	t.Parallel()
+
+	trunk := defaultTrunkRevset
+	now := time.Now()
+
+	unmergedKey := jj.Key(
+		"log",
+		"-r",
+		classify.UnmergedBookmarks(trunk),
+		"-T",
+		classify.Template,
+		"--no-graph",
+	)
+	trunkHistoryKey := jj.Key(
+		"log",
+		"-r",
+		"::("+trunk+")",
+		"--no-graph",
+		"-T",
+		"description ++ \"\\n---\\n\"",
+	)
+
+	t.Run("query error", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{Errs: map[string]error{unmergedKey: errors.New("boom")}}
+
+		_, _, err := heuristicBookmarks(context.Background(), fake, trunk, nil, defaultStaleAfter)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "querying unmerged bookmarks")
+	})
+
+	t.Run("parse error", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{Stdout: map[string]string{unmergedKey: "not json\n"}}
+
+		_, _, err := heuristicBookmarks(context.Background(), fake, trunk, nil, defaultStaleAfter)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "parsing unmerged bookmarks")
+	})
+
+	t.Run("trunk history error", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{
+			Stdout: map[string]string{
+				unmergedKey: bookmarkCandidateJSON(t, "a", "", []string{bookmarkFeat}, now),
+			},
+			Errs: map[string]error{trunkHistoryKey: errors.New("boom")},
+		}
+
+		_, _, err := heuristicBookmarks(context.Background(), fake, trunk, nil, defaultStaleAfter)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "fetching trunk history")
+	})
+
+	t.Run("classifies probably-merged, stale, and excludes fresh/protected", func(t *testing.T) {
+		t.Parallel()
+
+		probablyMergedJSON := bookmarkCandidateJSON(
+			t,
+			"p1",
+			"squashed pr",
+			[]string{bookmarkNameProbably},
+			now.Add(-time.Hour),
+		)
+		staleJSON := bookmarkCandidateJSON(
+			t,
+			"s1",
+			"",
+			[]string{bookmarkNameStale},
+			now.Add(-200*24*time.Hour),
+		)
+		freshJSON := bookmarkCandidateJSON(t, "f1", "", []string{"fresh"}, now)
+		protectedStaleJSON := bookmarkCandidateJSON(
+			t, "r1", "", []string{bookmarkReleaseV2}, now.Add(-200*24*time.Hour),
+		)
+
+		fake := &jj.Fake{
+			Stdout: map[string]string{
+				unmergedKey:     probablyMergedJSON + staleJSON + freshJSON + protectedStaleJSON,
+				trunkHistoryKey: "squashed pr\n---\n",
+			},
+		}
+
+		probablyMerged, stale, err := heuristicBookmarks(
+			context.Background(), fake, trunk, []string{globReleaseStar}, defaultStaleAfter,
+		)
+		require.NoError(t, err)
+		require.Len(t, probablyMerged, 1)
+		assert.Equal(t, "p1", probablyMerged[0].ChangeID)
+		require.Len(t, stale, 1)
+		assert.Equal(t, "s1", stale[0].ChangeID)
+	})
+}
+
+func TestBookmarksExceptSelf(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		candidate classify.Candidate
+		expect    string
+	}{
+		{
+			name:      "no bookmarks",
+			candidate: classify.Candidate{},
+			expect:    "bookmarks()",
+		},
+		{
+			name:      "one bookmark",
+			candidate: classify.Candidate{LocalBookmarks: []string{bookmarkFeat}},
+			expect:    `bookmarks() ~ bookmarks(exact:"feat")`,
+		},
+		{
+			name:      "multiple bookmarks",
+			candidate: classify.Candidate{LocalBookmarks: []string{bookmarkFeat, bookmarkFix}},
+			expect:    `bookmarks() ~ bookmarks(exact:"feat") ~ bookmarks(exact:"fix")`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tt.expect, bookmarksExceptSelf(tt.candidate))
+		})
+	}
+}
+
+func TestBookmarkItems(t *testing.T) {
+	t.Parallel()
+
+	trunk := defaultTrunkRevset
+	candidates := []classify.Candidate{
+		{ChangeID: "a", LocalBookmarks: []string{bookmarkFeat}},
+	}
+
+	items := bookmarkItems(candidates, classify.ReasonMerged, trunk)
+	require.Len(t, items, 1)
+	assert.Equal(t, []string{bookmarkFeat}, items[0].IDs)
+	assert.Equal(t, candidates[0], items[0].Candidate)
+	require.Len(t, items[0].CascadeIDs, 1)
+	assert.Contains(t, items[0].CascadeIDs[0], "a")
+	assert.Equal(t, classify.ReasonMerged, items[0].Legend.Reason)
+}
+
+func TestNewBookmarkContext(t *testing.T) {
+	t.Parallel()
+
+	trunk := defaultTrunkRevset
+	c := classify.Candidate{ChangeID: "c1", LocalBookmarks: []string{bookmarkFeat}}
+	keep := classify.KeepRevset(trunk, bookmarksExceptSelf(c))
+	chainKey := jj.Key("log", "-r", classify.PrivateChainRevset(c.ChangeID, keep), "-T",
+		`self.change_id().shortest() ++ "\n"`, "--no-graph")
+
+	t.Run("show error", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{Errs: map[string]error{jj.Key("show", "c1"): errors.New("boom")}}
+
+		fetch := newBookmarkContext(trunk)
+		_, err := fetch(context.Background(), fake, classify.Candidate{ChangeID: "c1"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "showing candidate")
+	})
+
+	t.Run("chain query error", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{
+			Stdout: map[string]string{jj.Key("show", "c1"): showOutputC1},
+			Errs:   map[string]error{chainKey: errors.New("boom")},
+		}
+
+		fetch := newBookmarkContext(trunk)
+		_, err := fetch(context.Background(), fake, c)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "checking private chain")
+	})
+
+	t.Run("empty chain reports no private commits", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{Stdout: map[string]string{
+			jj.Key("show", "c1"): showOutputC1,
+			chainKey:             "",
+		}}
+
+		fetch := newBookmarkContext(trunk)
+		got, err := fetch(context.Background(), fake, c)
+		require.NoError(t, err)
+		assert.Contains(t, got, "no private commits to abandon")
+	})
+
+	t.Run("non-empty chain reports cascade", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{Stdout: map[string]string{
+			jj.Key("show", "c1"): showOutputC1,
+			chainKey:             "c2\n",
+		}}
+
+		fetch := newBookmarkContext(trunk)
+		got, err := fetch(context.Background(), fake, c)
+		require.NoError(t, err)
+		assert.Contains(t, got, "Cascade would additionally abandon")
+		assert.Contains(t, got, "c2")
+	})
+}
+
+func TestNewForkContext(t *testing.T) {
+	t.Parallel()
+
+	trunk := commitsTrunk
+
+	descKeyFor := func(c classify.Candidate) string {
+		return jj.Key("log", "-r", classify.DescendantsRevset(c.ChangeID), "-T",
+			`self.change_id().shortest() ++ "\n"`, "--no-graph")
+	}
+	chainKeyFor := func(c classify.Candidate, forks []classify.Candidate) string {
+		keep := forkKeepRevset(trunk, forks, c.ChangeID)
+
+		return jj.Key("log", "-r", classify.PrivateChainRevset(c.ChangeID, keep), "-T",
+			`self.change_id().shortest() ++ "\n"`, "--no-graph")
+	}
+
+	t.Run("show error", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{Errs: map[string]error{jj.Key("show", "c1"): errors.New("boom")}}
+
+		fetch := newForkContext(trunk, nil)
+		_, err := fetch(context.Background(), fake, classify.Candidate{ChangeID: "c1"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "showing candidate")
+	})
+
+	t.Run("descendants query error", func(t *testing.T) {
+		t.Parallel()
+
+		c := classify.Candidate{ChangeID: "c1"}
+		fake := &jj.Fake{
+			Stdout: map[string]string{jj.Key("show", "c1"): showC1},
+			Errs:   map[string]error{descKeyFor(c): errors.New("boom")},
+		}
+
+		fetch := newForkContext(trunk, nil)
+		_, err := fetch(context.Background(), fake, c)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "checking descendants")
+	})
+
+	t.Run("chain query error", func(t *testing.T) {
+		t.Parallel()
+
+		c := classify.Candidate{ChangeID: "c1"}
+		fake := &jj.Fake{
+			Stdout: map[string]string{
+				jj.Key("show", "c1"): showC1,
+				descKeyFor(c):        "",
+			},
+			Errs: map[string]error{chainKeyFor(c, nil): errors.New("boom")},
+		}
+
+		fetch := newForkContext(trunk, nil)
+		_, err := fetch(context.Background(), fake, c)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "checking private chain")
+	})
+
+	t.Run("descendants and private chain both present", func(t *testing.T) {
+		t.Parallel()
+
+		c := classify.Candidate{ChangeID: "c1"}
+		fake := &jj.Fake{Stdout: map[string]string{
+			jj.Key("show", "c1"): showC1,
+			descKeyFor(c):        "d1\n",
+			chainKeyFor(c, nil):  "c1\n",
+		}}
+
+		fetch := newForkContext(trunk, nil)
+		got, err := fetch(context.Background(), fake, c)
+		require.NoError(t, err)
+		assert.Contains(t, got, "Descendants that will be rebased")
+		assert.Contains(t, got, "d1")
+		assert.Contains(t, got, "Will abandon:")
+		assert.Contains(t, got, "c1")
+	})
+
+	t.Run("no descendants", func(t *testing.T) {
+		t.Parallel()
+
+		c := classify.Candidate{ChangeID: "c1"}
+		fake := &jj.Fake{Stdout: map[string]string{
+			jj.Key("show", "c1"): showC1,
+			descKeyFor(c):        "",
+			chainKeyFor(c, nil):  "",
+		}}
+
+		fetch := newForkContext(trunk, nil)
+		got, err := fetch(context.Background(), fake, c)
+		require.NoError(t, err)
+		assert.NotContains(t, got, "Descendants that will be rebased")
+		assert.Contains(t, got, "Will abandon:")
+	})
+}
+
+func TestForkItemsForReason(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	older := classify.Candidate{ChangeID: "old", CommitTimestamp: now.Add(-48 * time.Hour)}
+	newer := classify.Candidate{ChangeID: "new", CommitTimestamp: now.Add(-1 * time.Hour)}
+
+	items := forkItemsForReason(
+		[]classify.Candidate{newer, older},
+		classify.ReasonNoDescription,
+		[]classify.Candidate{newer, older},
+		defaultTrunkRevset,
+	)
+
+	require.Len(t, items, 2)
+	assert.Equal(t, "old", items[0].Candidate.ChangeID, "oldest must come first")
+	assert.Equal(t, "new", items[1].Candidate.ChangeID)
+	assert.Equal(t, classify.ReasonNoDescription, items[0].Legend.Reason)
+	assert.Contains(t, items[0].Legend.DiffStat, "old")
+	assert.Empty(t, items[0].CascadeIDs, "commits review has no cascade action")
+}
+
+func TestBuildForksLegend(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty", func(t *testing.T) {
+		t.Parallel()
+
+		assert.Empty(t, buildForksLegend(nil))
+	})
+
+	t.Run("stamps age per bucket, preserving order", func(t *testing.T) {
+		t.Parallel()
+
+		now := time.Now()
+		buckets := []forkBucket{
+			{
+				reason: classify.ReasonGitCommitDuplicate,
+				candidates: []classify.Candidate{
+					{ChangeID: "d1", CommitTimestamp: now.Add(-time.Hour)},
+				},
+			},
+			{
+				reason: classify.ReasonNoDescription,
+				candidates: []classify.Candidate{
+					{ChangeID: "n1", CommitTimestamp: now.Add(-2 * time.Hour)},
+				},
+			},
+		}
+
+		legend := buildForksLegend(buckets)
+		require.Len(t, legend, 2)
+		assert.Equal(t, classify.ReasonGitCommitDuplicate, legend[0].Reason)
+		assert.Contains(t, legend[0].DiffStat, "hour")
+		assert.Equal(t, classify.ReasonNoDescription, legend[1].Reason)
+	})
+}
+
+func TestDeleteBookmarkBatch(t *testing.T) {
+	t.Parallel()
+
+	deleteKey := jj.Key("bookmark", "delete", `exact:"feat"`)
+	opLogKey := jj.Key(
+		"op",
+		"log",
+		"--no-graph",
+		"--limit",
+		"1",
+		"-T",
+		"self.id().short() ++ \"\\n\"",
+	)
+
+	t.Run("delete error", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{Errs: map[string]error{deleteKey: errors.New("boom")}}
+
+		_, err := deleteBookmarkBatch(context.Background(), fake, []string{bookmarkFeat})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "deleting merged bookmarks")
+	})
+
+	t.Run("op id lookup error", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{
+			Stdout: map[string]string{deleteKey: ""},
+			Errs:   map[string]error{opLogKey: errors.New("boom")},
+		}
+
+		_, err := deleteBookmarkBatch(context.Background(), fake, []string{bookmarkFeat})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "looking up resulting op id")
+	})
+
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{Stdout: map[string]string{
+			deleteKey: "",
+			opLogKey:  "op1\n",
+		}}
+
+		opID, err := deleteBookmarkBatch(context.Background(), fake, []string{bookmarkFeat})
+		require.NoError(t, err)
+		assert.Equal(t, "op1", opID)
+	})
+}
+
+func TestRequireTerminal_StdinNotFile_ReturnsErrNotInteractive(t *testing.T) {
+	t.Parallel()
+
+	err := requireTerminal(strings.NewReader(""), &strings.Builder{})
+	require.ErrorIs(t, err, tty.ErrNotInteractive)
+}
+
+func TestRequireTerminal_StdoutNotFile_ReturnsErrNotInteractive(t *testing.T) {
+	t.Parallel()
+
+	devNull, err := os.Open(os.DevNull)
+	require.NoError(t, err)
+
+	defer func() { _ = devNull.Close() }()
+
+	err = requireTerminal(devNull, &strings.Builder{})
+	require.ErrorIs(t, err, tty.ErrNotInteractive)
+}
+
+// TestRequireTerminal_BothTerminals_ReturnsNil covers requireTerminal's
+// success path by swapping tty.IsTerminal, the same technique internal/tty
+// and internal/spin's own tests use — there's no portable way to fake "is a
+// real terminal" for an arbitrary *os.File without an actual pty. Not run
+// in parallel with other tests: it mutates shared package state in
+// internal/tty.
+func TestRequireTerminal_BothTerminals_ReturnsNil(t *testing.T) {
+	original := tty.IsTerminal
+	tty.IsTerminal = func(*os.File) bool { return true }
+
+	t.Cleanup(func() { tty.IsTerminal = original })
+
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+
+	defer func() { _ = r.Close(); _ = w.Close() }()
+
+	assert.NoError(t, requireTerminal(r, w))
+}
+
+// TestRequireTerminal_TtyRequireError_Wrapped covers the branch where stdin
+// and stdout are both *os.File (so requireTerminal's own type assertions
+// pass) but tty.Require itself rejects one of them — same global-var-swap
+// technique and non-parallel caveat as
+// TestRequireTerminal_BothTerminals_ReturnsNil above.
+func TestRequireTerminal_TtyRequireError_Wrapped(t *testing.T) {
+	original := tty.IsTerminal
+	tty.IsTerminal = func(*os.File) bool { return false }
+
+	t.Cleanup(func() { tty.IsTerminal = original })
+
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+
+	defer func() { _ = r.Close(); _ = w.Close() }()
+
+	err = requireTerminal(r, w)
+	require.ErrorIs(t, err, tty.ErrNotInteractive)
+	assert.Contains(t, err.Error(), "checking tty")
+}
+
+func TestReviewCandidates_NonInteractive_FailsFast(t *testing.T) {
+	t.Parallel()
+
+	fake := &jj.Fake{}
+	action := review.Action{Verb: verbAbandon, Past: pastAbandoned, Apply: jj.Abandon}
+
+	err := reviewCandidates(
+		context.Background(),
+		fake,
+		strings.NewReader(""),
+		&strings.Builder{},
+		nil,
+		action,
+		nil,
+	)
+	require.ErrorIs(t, err, tty.ErrNotInteractive)
+	assert.Empty(t, fake.Calls, "must fail before issuing any jj calls")
+}
+
+func TestRunBookmarks(t *testing.T) {
+	t.Parallel()
+
+	trunk := defaultTrunkRevset
+	now := time.Now()
+
+	mergedJSON := bookmarkCandidateJSON(
+		t,
+		"m1",
+		"",
+		[]string{bookmarkFeat},
+		now.Add(-time.Hour),
+	)
+	probablyJSON := bookmarkCandidateJSON(
+		t,
+		"p1",
+		"squashed pr",
+		[]string{bookmarkNameProbably},
+		now.Add(-2*time.Hour),
+	)
+	staleJSON := bookmarkCandidateJSON(
+		t,
+		"s1",
+		"",
+		[]string{bookmarkNameStale},
+		now.Add(-200*24*time.Hour),
+	)
+
+	probablyMerged := []classify.Candidate{
+		{ChangeID: "p1", LocalBookmarks: []string{bookmarkNameProbably}},
+	}
+	stale := []classify.Candidate{{ChangeID: "s1", LocalBookmarks: []string{bookmarkNameStale}}}
+	previewRevset := bookmarksPreviewRevset(trunk, probablyMerged, stale)
+
+	newFixture := func() *jj.Fake {
+		return &jj.Fake{Stdout: map[string]string{
+			jj.Key("log", "-r", classify.MergedBookmarks(trunk), "-T", classify.Template, "--no-graph"): mergedJSON,
+			jj.Key(
+				"log", "-r", classify.UnmergedBookmarks(trunk), "-T", classify.Template, "--no-graph",
+			): probablyJSON + staleJSON,
+			jj.Key("log", "-r", "::("+trunk+")", "--no-graph", "-T", "description ++ \"\\n---\\n\""): "squashed pr\n---\n",
+			jj.Key("log", "-r", previewRevset, "--no-pager", "--color=never"):                        "@ preview\n",
+		}}
+	}
+
+	t.Run("preview action summarizes without deleting", func(t *testing.T) {
+		t.Parallel()
+
+		fake := newFixture()
+
+		var out strings.Builder
+
+		err := runBookmarks(
+			context.Background(),
+			fake,
+			BookmarksCmd{},
+			cmdLeafPreview,
+			strings.NewReader(""),
+			&out,
+		)
+		require.NoError(t, err)
+		assert.Contains(t, out.String(), "Would delete 1 bookmark(s)")
+		assert.Contains(t, out.String(), "2 more bookmark(s) look")
+
+		for _, c := range fake.Calls {
+			if len(c.Args) >= 2 {
+				assert.False(
+					t,
+					c.Args[0] == "bookmark" && c.Args[1] == "delete",
+					"preview must never delete",
+				)
+			}
+		}
+	})
+
+	t.Run("apply action deletes merged bucket only", func(t *testing.T) {
+		t.Parallel()
+
+		fake := newFixture()
+		fake.Stdout[jj.Key("bookmark", "delete", `exact:"feat"`)] = ""
+		fake.Stdout[jj.Key("op", "log", "--no-graph", "--limit", "1", "-T", "self.id().short() ++ \"\\n\"")] = "op1\n"
+
+		var out strings.Builder
+
+		err := runBookmarks(
+			context.Background(),
+			fake,
+			BookmarksCmd{},
+			cmdLeafApply,
+			strings.NewReader(""),
+			&out,
+		)
+		require.NoError(t, err)
+		assert.Contains(t, out.String(), "Deleted 1 bookmark(s)")
+		assert.Contains(t, out.String(), "jj op revert op1")
+	})
+
+	t.Run("review action requires a terminal", func(t *testing.T) {
+		t.Parallel()
+
+		fake := newFixture()
+
+		var out strings.Builder
+
+		err := runBookmarks(
+			context.Background(),
+			fake,
+			BookmarksCmd{},
+			cmdLeafReview,
+			strings.NewReader(""),
+			&out,
+		)
+		require.ErrorIs(t, err, tty.ErrNotInteractive)
+	})
+
+	t.Run("unrecognized action falls back to preview", func(t *testing.T) {
+		t.Parallel()
+
+		fake := newFixture()
+
+		var out strings.Builder
+
+		err := runBookmarks(
+			context.Background(),
+			fake,
+			BookmarksCmd{},
+			"bogus",
+			strings.NewReader(""),
+			&out,
+		)
+		require.NoError(t, err)
+		assert.Contains(t, out.String(), "Would delete 1 bookmark(s)")
+	})
+
+	t.Run("classification error propagates", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{Errs: map[string]error{
+			jj.Key("log", "-r", classify.MergedBookmarks(trunk), "-T", classify.Template, "--no-graph"): errors.New(
+				"boom",
+			),
+		}}
+
+		var out strings.Builder
+
+		err := runBookmarks(
+			context.Background(),
+			fake,
+			BookmarksCmd{},
+			cmdLeafPreview,
+			strings.NewReader(""),
+			&out,
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "classifying bookmarks")
+	})
+
+	t.Run("custom stale-after and trunk flags used", func(t *testing.T) {
+		t.Parallel()
+
+		customTrunk := "custom_trunk()"
+		staleAfter := 10 * 24 * time.Hour
+		fake := &jj.Fake{Stdout: map[string]string{
+			jj.Key("log", "-r", classify.MergedBookmarks(customTrunk), "-T", classify.Template, "--no-graph"):   "",
+			jj.Key("log", "-r", classify.UnmergedBookmarks(customTrunk), "-T", classify.Template, "--no-graph"): "",
+			jj.Key("log", "-r", "::("+customTrunk+")", "--no-graph", "-T", "description ++ \"\\n---\\n\""):      "",
+			jj.Key(
+				"log", "-r", classify.MergedBookmarks(customTrunk), "--no-pager", "--color=never",
+			): noCandidatesOutput,
+		}}
+		cmd := BookmarksCmd{Trunk: customTrunk, StaleAfter: &staleAfter}
+
+		var out strings.Builder
+
+		err := runBookmarks(
+			context.Background(),
+			fake,
+			cmd,
+			cmdLeafPreview,
+			strings.NewReader(""),
+			&out,
+		)
+		require.NoError(t, err)
+	})
+}
+
+func TestRunCommits(t *testing.T) {
+	t.Parallel()
+
+	forksKey := forksLogKey()
+	keptKey := keptLogKey()
+
+	duplicateBuckets := []forkBucket{
+		{
+			reason:     classify.ReasonGitCommitDuplicate,
+			candidates: []classify.Candidate{{ChangeID: "orphan"}},
+		},
+	}
+
+	orphanKeptFake := func(t *testing.T) *jj.Fake {
+		t.Helper()
+
+		orphan := forkCandidateJSON(t, "orphan", "", []string{forkParent}, "same-hash")
+		kept := forkCandidateJSON(t, "kept", "raw git commit", []string{forkParent}, "same-hash")
+		previewRevset := forksPreviewRevset(duplicateBuckets, false)
+
+		return &jj.Fake{Stdout: map[string]string{
+			forksKey: orphan,
+			keptKey:  kept,
+			jj.Key("log", "-r", previewRevset, "--no-pager", "--color=never"): "@ orphan\n",
+		}}
+	}
+
+	t.Run("preview action summarizes without abandoning", func(t *testing.T) {
+		t.Parallel()
+
+		fake := orphanKeptFake(t)
+
+		var out strings.Builder
+
+		err := runCommits(
+			context.Background(),
+			fake,
+			CommitsCmd{},
+			cmdLeafPreview,
+			strings.NewReader(""),
+			&out,
+		)
+		require.NoError(t, err)
+		assert.Contains(t, out.String(), "1 anonymous commit(s) found")
+		assert.Contains(t, out.String(), "commits review")
+	})
+
+	t.Run("no candidates reports none found", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{Stdout: map[string]string{
+			forksKey: "",
+			keptKey:  "",
+			jj.Key("log", "-r", classify.AnonymousForks(), "--no-pager", "--color=never"): noCandidatesOutput,
+		}}
+
+		var out strings.Builder
+
+		err := runCommits(
+			context.Background(),
+			fake,
+			CommitsCmd{},
+			cmdLeafPreview,
+			strings.NewReader(""),
+			&out,
+		)
+		require.NoError(t, err)
+		assert.Contains(t, out.String(), "No anonymous commits found.")
+	})
+
+	t.Run("review action requires a terminal", func(t *testing.T) {
+		t.Parallel()
+
+		fake := orphanKeptFake(t)
+
+		var out strings.Builder
+
+		err := runCommits(
+			context.Background(),
+			fake,
+			CommitsCmd{},
+			cmdLeafReview,
+			strings.NewReader(""),
+			&out,
+		)
+		require.ErrorIs(t, err, tty.ErrNotInteractive)
+	})
+
+	t.Run("classification error propagates", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{Errs: map[string]error{forksKey: errors.New("boom")}}
+
+		var out strings.Builder
+
+		err := runCommits(
+			context.Background(),
+			fake,
+			CommitsCmd{},
+			cmdLeafPreview,
+			strings.NewReader(""),
+			&out,
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "classifying commits")
+	})
+
+	t.Run("no-description-only narrows preview base", func(t *testing.T) {
+		t.Parallel()
+
+		fake := &jj.Fake{Stdout: map[string]string{
+			forksKey: "",
+			keptKey:  "",
+			jj.Key("log", "-r", classify.AnonymousForksNoDescription(), "--no-pager", "--color=never"): noCandidatesOutput,
+		}}
+
+		var out strings.Builder
+
+		err := runCommits(
+			context.Background(),
+			fake,
+			CommitsCmd{NoDescriptionOnly: true},
+			cmdLeafPreview,
+			strings.NewReader(""),
+			&out,
+		)
+		require.NoError(t, err)
+	})
 }
 
 func TestBookmarksPreviewRevset(t *testing.T) {
