@@ -130,6 +130,34 @@ func TestParseCandidates_LongDescription_DoesNotFailOnBufioDefaultLimit(t *testi
 	assert.Len(t, candidates[0].Description, 100*1024)
 }
 
+// TestParseCandidates_DiffHashTemplateError_DoesNotFailWholeParse guards a
+// real crash found in the field: jj's hash() template function stringifies
+// its argument first, and self.diff().git() can contain raw non-UTF-8 bytes
+// for a commit touching binary files (e.g. binary/encrypted content). jj
+// then renders an unquoted `<Error: invalid utf-8 sequence ...>` in place of
+// the diff_hash string value, which breaks the whole line's JSON — and used
+// to fail every candidate in the batch, not just the one with a binary
+// diff. ParseCandidates must recover that one field instead.
+func TestParseCandidates_DiffHashTemplateError_DoesNotFailWholeParse(t *testing.T) {
+	t.Parallel()
+
+	line := `{"change_id":"znrvtksuzstnykqnzxznktxyykprlstp",` +
+		`"change_id_short":{"prefix":"znrv","rest":""},` +
+		`"description":"Fixed encryption\n",` +
+		`"local_bookmarks":[],` +
+		`"commit_timestamp":"2024-12-29T17:03:15-06:00",` +
+		`"files_changed":2,"lines_added":12,"lines_removed":6,` +
+		`"has_tracked_remote":false,` +
+		`"parent_change_ids":["rqryystpoptktyrnonoynunkyvpmumty"],` +
+		`"diff_hash":<Error: invalid utf-8 sequence of 1 bytes from index 1090>}` + "\n"
+
+	candidates, err := classify.ParseCandidates(line)
+	require.NoError(t, err)
+	require.Len(t, candidates, 1)
+	assert.Equal(t, "znrvtksuzstnykqnzxznktxyykprlstp", candidates[0].ChangeID)
+	assert.NotEmpty(t, candidates[0].DiffHash)
+}
+
 func TestSortOldestFirst(t *testing.T) {
 	t.Parallel()
 
