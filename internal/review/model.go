@@ -442,13 +442,13 @@ func (m *model) handleListMarkKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case m.action.markKey():
 		m.setDecision(m.list.Index(), decisionMarked)
 
-		return nil, true
+		return m.advanceCursorCmd(), true
 	}
 
 	if m.action.CascadeAction != nil && msg.String() == m.action.CascadeAction.markKey() {
 		m.setDecision(m.list.Index(), decisionMarkedCascade)
 
-		return nil, true
+		return m.advanceCursorCmd(), true
 	}
 
 	return nil, false
@@ -462,16 +462,38 @@ func (m *model) handleListNavigation(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	m.list, cmd = m.list.Update(msg)
 
 	if m.list.Index() != before {
-		if content, ok := m.detailCache[m.list.Index()]; ok {
-			m.detail.SetContent(content)
-		} else {
-			m.detail.SetContent("loading…")
-		}
-
-		return m, tea.Batch(cmd, m.fetchDetailCmd(m.list.Index()))
+		return m, tea.Batch(cmd, m.syncDetailCmd())
 	}
 
 	return m, cmd
+}
+
+// syncDetailCmd refreshes the detail pane for the list's current index —
+// from cache if we've already fetched it, otherwise a "loading…" placeholder
+// plus the fetch command. Shared by cursor movement (handleListNavigation)
+// and the mark keys, which advance the cursor themselves via CursorDown.
+func (m *model) syncDetailCmd() tea.Cmd {
+	if content, ok := m.detailCache[m.list.Index()]; ok {
+		m.detail.SetContent(content)
+	} else {
+		m.detail.SetContent("loading…")
+	}
+
+	return m.fetchDetailCmd(m.list.Index())
+}
+
+// advanceCursorCmd moves the list cursor to the next row after a mark key
+// is pressed, so reviewing a batch of items doesn't require alternating
+// between a mark key and a down-arrow for every item.
+func (m *model) advanceCursorCmd() tea.Cmd {
+	before := m.list.Index()
+	m.list.CursorDown()
+
+	if m.list.Index() == before {
+		return nil
+	}
+
+	return m.syncDetailCmd()
 }
 
 func (m *model) handleConfirmKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -859,6 +881,15 @@ func (m *model) pruneApplied() tea.Cmd {
 		m.detail.SetContent("(nothing left to review)")
 
 		return nil
+	}
+
+	// SetItems doesn't clamp the cursor to the new, shorter list — left
+	// alone, a cursor that had advanced past the last surviving item (see
+	// advanceCursorCmd) would point past the end, and every subsequent
+	// mark/unmark on it would silently no-op (setDecision/clearDecision's
+	// bounds checks).
+	if m.list.Index() >= len(kept) {
+		m.list.Select(len(kept) - 1)
 	}
 
 	m.detail.SetContent("loading…")
