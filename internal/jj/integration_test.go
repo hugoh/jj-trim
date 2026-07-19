@@ -46,6 +46,17 @@ func runIn(t *testing.T, dir string, args ...string) string {
 	return string(out)
 }
 
+// configureGitIdentity sets a local git user.name/user.email in dir — CI
+// runners don't have a global one configured, unlike most dev machines, and
+// jj falls back to git's identity when its own isn't set, which some
+// operations (a raw `git commit`, `jj git push`) require to be present.
+func configureGitIdentity(t *testing.T, dir string) {
+	t.Helper()
+
+	runGit(t, dir, "config", "user.email", "test@example.com")
+	runGit(t, dir, "config", "user.name", "Test")
+}
+
 // initRepo creates a temp repo with a git repo initialized and a "main"
 // bookmark pointing at root.
 func initRepo(t *testing.T) string {
@@ -53,6 +64,7 @@ func initRepo(t *testing.T) string {
 
 	dir := t.TempDir()
 	runIn(t, dir, "git", "init")
+	configureGitIdentity(t, dir)
 	runIn(t, dir, "describe", "-m", "root change")
 	runIn(t, dir, "bookmark", "create", "main", "-r", "@")
 
@@ -558,23 +570,7 @@ func TestGitCommitDuplicate_RealRepo(t *testing.T) {
 
 	dir := t.TempDir()
 	runIn(t, dir, "git", "init", "--colocate")
-
-	// The raw `git commit` below needs a local identity — CI runners don't
-	// have a global one configured, unlike most dev machines.
-	gitConfigEmail := exec.CommandContext(
-		context.Background(),
-		"git",
-		"config",
-		"user.email",
-		"test@example.com",
-	)
-	gitConfigEmail.Dir = dir
-	require.NoError(t, gitConfigEmail.Run())
-
-	gitConfigName := exec.CommandContext(context.Background(), "git", "config", "user.name", "Test")
-	gitConfigName.Dir = dir
-	require.NoError(t, gitConfigName.Run())
-
+	configureGitIdentity(t, dir)
 	runIn(t, dir, "describe", "-m", "root change")
 	runIn(t, dir, "bookmark", "create", "main", "-r", "@")
 
