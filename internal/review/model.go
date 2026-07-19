@@ -409,6 +409,10 @@ func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	switch m.screen {
 	case screenList:
+		if m.handleDetailScrollKey(msg) {
+			return m, nil
+		}
+
 		if cmd, handled := m.handleListMarkKey(msg); handled {
 			return m, cmd
 		}
@@ -442,16 +446,40 @@ func (m *model) handleListMarkKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case m.action.markKey():
 		m.setDecision(m.list.Index(), decisionMarked)
 
-		return nil, true
+		return m.advanceCursorCmd(), true
 	}
 
 	if m.action.CascadeAction != nil && msg.String() == m.action.CascadeAction.markKey() {
 		m.setDecision(m.list.Index(), decisionMarkedCascade)
 
-		return nil, true
+		return m.advanceCursorCmd(), true
 	}
 
 	return nil, false
+}
+
+// handleDetailScrollKey scrolls the detail pane on ctrl+j/k (line) and
+// ctrl+d/u (half page, matching vim's own convention). It can't reuse
+// screenApplied's forward-everything-to-viewport.Update pattern
+// (handleAppliedKey) since plain arrows/j/k/pgup/pgdn are already claimed
+// by m.list's own navigation and single letters by the per-Action mark
+// keys — so these bindings are handled explicitly here, ahead of both, and
+// the bool return tells handleKey not to fall through to them.
+func (m *model) handleDetailScrollKey(msg tea.KeyPressMsg) bool {
+	switch msg.String() {
+	case "ctrl+j":
+		m.detail.ScrollDown(1)
+	case "ctrl+k":
+		m.detail.ScrollUp(1)
+	case "ctrl+d":
+		m.detail.HalfPageDown()
+	case "ctrl+u":
+		m.detail.HalfPageUp()
+	default:
+		return false
+	}
+
+	return true
 }
 
 func (m *model) handleListNavigation(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -462,16 +490,40 @@ func (m *model) handleListNavigation(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	m.list, cmd = m.list.Update(msg)
 
 	if m.list.Index() != before {
-		if content, ok := m.detailCache[m.list.Index()]; ok {
-			m.detail.SetContent(content)
-		} else {
-			m.detail.SetContent("loading…")
-		}
-
-		return m, tea.Batch(cmd, m.fetchDetailCmd(m.list.Index()))
+		return m, tea.Batch(cmd, m.syncDetailCmd())
 	}
 
 	return m, cmd
+}
+
+// syncDetailCmd refreshes the detail pane for the list's current index —
+// from cache if we've already fetched it, otherwise a "loading…" placeholder
+// plus the fetch command. Shared by cursor movement (handleListNavigation)
+// and the mark keys, which advance the cursor themselves via CursorDown.
+func (m *model) syncDetailCmd() tea.Cmd {
+	if content, ok := m.detailCache[m.list.Index()]; ok {
+		m.detail.SetContent(content)
+	} else {
+		m.detail.SetContent("loading…")
+	}
+
+	m.detail.GotoTop()
+
+	return m.fetchDetailCmd(m.list.Index())
+}
+
+// advanceCursorCmd moves the list cursor to the next row after a mark key
+// is pressed, so reviewing a batch of items doesn't require alternating
+// between a mark key and a down-arrow for every item.
+func (m *model) advanceCursorCmd() tea.Cmd {
+	before := m.list.Index()
+	m.list.CursorDown()
+
+	if m.list.Index() == before {
+		return nil
+	}
+
+	return m.syncDetailCmd()
 }
 
 func (m *model) handleConfirmKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -861,6 +913,15 @@ func (m *model) pruneApplied() tea.Cmd {
 		return nil
 	}
 
+	// SetItems doesn't clamp the cursor to the new, shorter list — left
+	// alone, a cursor that had advanced past the last surviving item (see
+	// advanceCursorCmd) would point past the end, and every subsequent
+	// mark/unmark on it would silently no-op (setDecision/clearDecision's
+	// bounds checks).
+	if m.list.Index() >= len(kept) {
+		m.list.Select(len(kept) - 1)
+	}
+
 	m.detail.SetContent("loading…")
 
 	return m.fetchDetailCmd(m.list.Index())
@@ -1024,13 +1085,17 @@ func (m *model) tally() string {
 	if m.action.CascadeAction != nil {
 		countsPart = fmt.Sprintf("%d %s | %d %s",
 			len(marked), m.action.Verb, len(cascade), m.action.CascadeAction.Verb)
-		help = fmt.Sprintf("%s=%s  %s=%s  u=unmark  enter=next  q/esc=cancel",
-			m.action.markKey(), m.action.Verb,
-			m.action.CascadeAction.markKey(), m.action.CascadeAction.Verb)
+		help = fmt.Sprintf(
+			"%s=%s  %s=%s  u=unmark  enter=next  q/esc=cancel  ctrl+j/k=scroll  ctrl+u/d=page",
+			m.action.markKey(),
+			m.action.Verb,
+			m.action.CascadeAction.markKey(),
+			m.action.CascadeAction.Verb,
+		)
 	} else {
 		countsPart = fmt.Sprintf("%d to %s", len(marked), m.action.Verb)
 		help = fmt.Sprintf(
-			"%s=%s  u=unmark  enter=next  q/esc=cancel",
+			"%s=%s  u=unmark  enter=next  q/esc=cancel  ctrl+j/k=scroll  ctrl+u/d=page",
 			m.action.markKey(),
 			m.action.Verb,
 		)

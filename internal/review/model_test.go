@@ -456,8 +456,16 @@ func TestReview_ToggleMarkTwice_Unmarks(t *testing.T) {
 
 	// Unmark — this is the "go back and change your mind" navigation the
 	// review flow is built around: no separate back-key needed, since
-	// pressing the same mark key twice reverts the decision.
-	markAndConfirm(t, tm, tea.KeyPressMsg{Code: 'd'}, tea.KeyPressMsg{Code: 'd'})
+	// pressing the same mark key twice reverts the decision. A mark key
+	// advances the cursor, so press up to land back on the same item
+	// before pressing it again.
+	markAndConfirm(
+		t,
+		tm,
+		tea.KeyPressMsg{Code: 'd'},
+		tea.KeyPressMsg{Code: tea.KeyUp},
+		tea.KeyPressMsg{Code: 'd'},
+	)
 
 	confirmWithNothingMarkedThenQuit(t, tm)
 
@@ -472,7 +480,13 @@ func TestReview_Unmark_ClearsEitherState(t *testing.T) {
 
 	tm := newTestModel(t, fake, testItems(t), action)
 
-	markAndConfirm(t, tm, tea.KeyPressMsg{Code: 'a'}, tea.KeyPressMsg{Code: 'u'})
+	markAndConfirm(
+		t,
+		tm,
+		tea.KeyPressMsg{Code: 'a'},
+		tea.KeyPressMsg{Code: tea.KeyUp},
+		tea.KeyPressMsg{Code: 'u'},
+	)
 
 	confirmWithNothingMarkedThenQuit(t, tm)
 
@@ -496,7 +510,13 @@ func TestReview_SwitchingMarkKeyChangesState(t *testing.T) {
 
 	tm := newTestModel(t, fake, testItems(t), action)
 
-	markAndConfirm(t, tm, tea.KeyPressMsg{Code: 'd'}, tea.KeyPressMsg{Code: 'a'})
+	markAndConfirm(
+		t,
+		tm,
+		tea.KeyPressMsg{Code: 'd'},
+		tea.KeyPressMsg{Code: tea.KeyUp},
+		tea.KeyPressMsg{Code: 'a'},
+	)
 
 	confirmApplyAndQuit(t, tm)
 
