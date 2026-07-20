@@ -8,8 +8,6 @@ never bookmarked, and presents everything in a preview graph or an interactive
 TUI — with jj's own `jj op revert` as the safety net.
 
 [![CI](https://github.com/hugoh/jj-trim/actions/workflows/ci.yml/badge.svg)](https://github.com/hugoh/jj-trim/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/github/hugoh/jj-trim/graph/badge.svg?token=91HAIC8SER)](https://codecov.io/github/hugoh/jj-trim)
-[![Go Report Card](https://goreportcard.com/badge/github.com/hugoh/jj-trim)](https://goreportcard.com/report/github.com/hugoh/jj-trim)
 
 ## Features
 
