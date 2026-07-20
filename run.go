@@ -992,7 +992,7 @@ func runTui(ctx context.Context, r jj.Runner, stdin io.Reader, stdout io.Writer)
 		Commits:   commitsBrowseSession,
 	}
 
-	result, err := browse.Run(ctx, r, cfg, opts, stdin, stdout)
+	result, err := browse.Run(ctx, jj.NewCachingRunner(r), cfg, opts, stdin, stdout)
 	if err != nil {
 		return fmt.Errorf("tui session: %w", err)
 	}

@@ -167,6 +167,33 @@ func LastOpID(ctx context.Context, r Runner) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// CurrentOpID returns the id of the most recent operation, like LastOpID,
+// but passes --ignore-working-copy so the check itself never triggers a
+// working-copy snapshot operation. That distinction matters for
+// CachingRunner: if the freshness probe could append its own op-log entry,
+// every check would see a "mutation" and invalidate the cache it just
+// populated. LastOpID's post-mutation undo-hint callers don't need this,
+// since a real snapshot there is already accounted for by the batch that
+// just ran.
+func CurrentOpID(ctx context.Context, r Runner) (string, error) {
+	out, err := r.Run(
+		ctx,
+		"op",
+		"log",
+		"--ignore-working-copy",
+		"--no-graph",
+		"--limit",
+		"1",
+		"-T",
+		"self.id().short() ++ \"\\n\"",
+	)
+	if err != nil {
+		return "", fmt.Errorf("jj op log: %w", err)
+	}
+
+	return strings.TrimSpace(out), nil
+}
+
 // OpShow returns `jj op show`'s rendering of opID — the operation's own
 // description plus the diff of what it actually changed (e.g. "Deleted
 // bookmark tags" or the abandoned commit's summary) — used by review's
