@@ -1,6 +1,6 @@
-amends "package://github.com/jdx/hk/releases/download/v1.51.0/hk@1.51.0#/Config.pkl"
-import "package://github.com/jdx/hk/releases/download/v1.51.0/hk@1.51.0#/Builtins.pkl"
-import "package://github.com/hugoh/hk-config/releases/download/v1.1.0/hk-config@1.1.0#/base.pkl" as Base
+amends "package://github.com/jdx/hk/releases/download/v1.52.0/hk@1.52.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.52.0/hk@1.52.0#/Builtins.pkl"
+import "package://github.com/hugoh/hk-config/releases/download/v1.2.0/hk-config@1.2.0#/base.pkl" as Base
 
 min_hk_version = Base.min_hk_version
 
@@ -9,7 +9,7 @@ local linters = new Mapping<String, Step> {
   ...Base.shell
   // go generate output can legitimately end without touching trailing
   // whitespace elsewhere in the file; base's check conflicts with that
-  ["trailing-ws"] = (Builtins.trailing_whitespace) {
+  ["trailing_whitespace"] = (Builtins.trailing_whitespace) {
     condition = "false"
   }
   // hugoh/go-tools' own self-referential workflow pins are rendered by this
@@ -30,19 +30,19 @@ local linters = new Mapping<String, Step> {
   }
   // Same copier-serializer quirk as above: it omits the trailing newline
   // ryl's new-line-at-end-of-file rule expects
-  ["yaml"] = (Builtins.ryl) {
+  ["ryl"] = (Builtins.ryl) {
     exclude = List(".copier-answers.yml")
   }
-  ["golangci-lint-config"] = {
+  ["golangci_lint_config"] = {
     check = "golangci-lint config verify"
   }
-  ["golangci-lint"] = (Builtins.golangci_lint) {
+  ["golangci_lint"] = (Builtins.golangci_lint) {
     profiles = List("!ci")
   }
-  ["gomod-tidy"] = (Builtins.gomod_tidy) {
+  ["gomod_tidy"] = (Builtins.gomod_tidy) {
     profiles = List("!ci")
   }
-  ["conventional-commit"] {
+  ["conventional_commit"] {
     check = "cog check --from-latest-tag"
   }
   ["govulncheck"] = {
@@ -74,7 +74,6 @@ hooks {
   }
   ["commit-msg"] {
     steps = new Mapping<String, Step> {
-      ["check-conventional-commit"] = Builtins.check_conventional_commit
       ["cocogitto_commit_msg"] = Builtins.cocogitto_commit_msg
     }
   }
