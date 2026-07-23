@@ -2,10 +2,12 @@
 go = "1.26.5"
 "go:github.com/vladopajic/go-test-coverage/v2" = "2.18.8"
 golangci-lint = "2.12.2"
+#
 goreleaser = "2.17.0"
+#
 cocogitto = "7.0.0"
 gotestsum = "1.13.0"
-hk = "1.51.0"
+hk = "1.52.0"
 rumdl = "0.2.34"
 zizmor = "1.27.0"
 biome = "2.5.4"
