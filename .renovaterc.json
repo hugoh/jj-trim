@@ -9,8 +9,8 @@
       "enabled": false
     },
     {
-      "description": "mise.toml [tools] versions are Copier-managed too (regenerated on every `copier update` from go-tools' template's mise.toml.jinja). Let Copier own tool versions instead of Renovate bumping them directly, to avoid the two racing to update the same file.",
-      "matchManagers": ["mise"],
+      "description": "mise.toml [tools] versions are Copier-managed too (regenerated on every `copier update` from go-tools' template's mise.toml.jinja). Let Copier own tool versions instead of Renovate bumping them directly, to avoid the two racing to update the same file. Covers both the built-in mise manager and hk-config's custom.regex manager (which bumps the `hk = \"...\"` line in mise.toml alongside hk.pkl).",
+      "matchManagers": ["mise", "custom.regex"],
       "matchFileNames": ["mise.toml"],
       "enabled": false
     }
