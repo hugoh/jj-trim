@@ -207,12 +207,9 @@ func runBookmarks(
 	err := spin.Run(os.Stderr, "Classifying bookmarks…", func() error {
 		var err error
 
-		merged, err = mergedBookmarks(ctx, r, trunk, cmd.Protected)
-		if err != nil {
-			return err
-		}
-
-		probablyMerged, stale, err = heuristicBookmarks(ctx, r, trunk, cmd.Protected, staleAfter)
+		merged, probablyMerged, stale, err = classifyBookmarks(
+			ctx, r, trunk, cmd.Protected, staleAfter,
+		)
 
 		return err
 	})
@@ -393,6 +390,43 @@ func heuristicBookmarks(
 	}
 
 	return probablyMerged, stale, nil
+}
+
+// classifyBookmarks runs mergedBookmarks and heuristicBookmarks concurrently
+// — like classifyForks below, their underlying jj queries are independent of
+// each other, so there's no reason to pay for them back-to-back.
+func classifyBookmarks(
+	ctx context.Context,
+	r jj.Runner,
+	trunk string,
+	protectedGlobs []string,
+	staleAfter time.Duration,
+) ([]classify.Candidate, []classify.Candidate, []classify.Candidate, error) {
+	var merged, probablyMerged, stale []classify.Candidate
+
+	g, gctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		var err error
+
+		merged, err = mergedBookmarks(gctx, r, trunk, protectedGlobs)
+
+		return err
+	})
+
+	g.Go(func() error {
+		var err error
+
+		probablyMerged, stale, err = heuristicBookmarks(gctx, r, trunk, protectedGlobs, staleAfter)
+
+		return err
+	})
+
+	if err := g.Wait(); err != nil {
+		return nil, nil, nil, fmt.Errorf("classifying bookmarks concurrently: %w", err)
+	}
+
+	return merged, probablyMerged, stale, nil
 }
 
 // bookmarksPreviewRevset widens MergedBookmarks(trunk) to also include the
@@ -1019,12 +1053,13 @@ func bookmarksBrowseSession(
 		staleAfter = *cfg.StaleAfter
 	}
 
-	merged, err := mergedBookmarks(ctx, r, trunk, cfg.Protected)
-	if err != nil {
-		return browse.Session{}, err
-	}
-
-	probablyMerged, stale, err := heuristicBookmarks(ctx, r, trunk, cfg.Protected, staleAfter)
+	merged, probablyMerged, stale, err := classifyBookmarks(
+		ctx,
+		r,
+		trunk,
+		cfg.Protected,
+		staleAfter,
+	)
 	if err != nil {
 		return browse.Session{}, err
 	}
