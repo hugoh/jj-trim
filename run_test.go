@@ -117,6 +117,8 @@ const (
 	showOutputC1         = "show output\n"
 	showC1               = "show\n"
 	noCandidatesOutput   = "(no candidates)\n"
+
+	trunkHistoryFixture = "squashed pr\n---\n"
 )
 
 // forkCandidateJSON builds one classify.Template-shaped JSONL line for
@@ -1106,7 +1108,7 @@ func TestHeuristicBookmarks(t *testing.T) {
 		fake := &jj.Fake{
 			Stdout: map[string]string{
 				unmergedKey:     probablyMergedJSON + staleJSON + freshJSON + protectedStaleJSON,
-				trunkHistoryKey: "squashed pr\n---\n",
+				trunkHistoryKey: trunkHistoryFixture,
 			},
 		}
 
@@ -1119,6 +1121,56 @@ func TestHeuristicBookmarks(t *testing.T) {
 		require.Len(t, stale, 1)
 		assert.Equal(t, "s1", stale[0].ChangeID)
 	})
+}
+
+// TestClassifyBookmarks_CombinesMergedAndHeuristicBuckets guards run.go's
+// concurrent wiring of mergedBookmarks and heuristicBookmarks: both queries
+// are independent of each other, so classifyBookmarks runs them via
+// errgroup (mirroring classifyForks) rather than back-to-back, and this
+// must still surface all three buckets correctly regardless of which
+// goroutine's jj.Fake response lands first.
+func TestClassifyBookmarks_CombinesMergedAndHeuristicBuckets(t *testing.T) {
+	t.Parallel()
+
+	trunk := defaultTrunkRevset
+	now := time.Now()
+
+	mergedKey := jj.Key(
+		"log", "-r", classify.MergedBookmarks(trunk), "-T", classify.Template, "--no-graph",
+	)
+	unmergedKey := jj.Key(
+		"log", "-r", classify.UnmergedBookmarks(trunk), "-T", classify.Template, "--no-graph",
+	)
+	trunkHistoryKey := jj.Key(
+		"log", "-r", "::("+trunk+")", "--no-graph", "-T", "description ++ \"\\n---\\n\"",
+	)
+
+	mergedJSON := bookmarkCandidateJSON(t, "m1", "", []string{"merged"}, now)
+	probablyMergedJSON := bookmarkCandidateJSON(
+		t, "p1", "squashed pr", []string{bookmarkNameProbably}, now.Add(-time.Hour),
+	)
+	staleJSON := bookmarkCandidateJSON(
+		t, "s1", "", []string{bookmarkNameStale}, now.Add(-200*24*time.Hour),
+	)
+
+	fake := &jj.Fake{
+		Stdout: map[string]string{
+			mergedKey:       mergedJSON,
+			unmergedKey:     probablyMergedJSON + staleJSON,
+			trunkHistoryKey: trunkHistoryFixture,
+		},
+	}
+
+	merged, probablyMerged, stale, err := classifyBookmarks(
+		context.Background(), fake, trunk, nil, defaultStaleAfter,
+	)
+	require.NoError(t, err)
+	require.Len(t, merged, 1)
+	assert.Equal(t, "m1", merged[0].ChangeID)
+	require.Len(t, probablyMerged, 1)
+	assert.Equal(t, "p1", probablyMerged[0].ChangeID)
+	require.Len(t, stale, 1)
+	assert.Equal(t, "s1", stale[0].ChangeID)
 }
 
 func TestBookmarksExceptSelf(t *testing.T) {
@@ -1561,7 +1613,7 @@ func TestRunBookmarks(t *testing.T) {
 			jj.Key(
 				"log", "-r", classify.UnmergedBookmarks(trunk), "-T", classify.Template, "--no-graph",
 			): probablyJSON + staleJSON,
-			jj.Key("log", "-r", "::("+trunk+")", "--no-graph", "-T", "description ++ \"\\n---\\n\""): "squashed pr\n---\n",
+			jj.Key("log", "-r", "::("+trunk+")", "--no-graph", "-T", "description ++ \"\\n---\\n\""): trunkHistoryFixture,
 			jj.Key("log", "-r", previewRevset, "--no-pager", "--color=never"):                        "@ preview\n",
 		}}
 	}
