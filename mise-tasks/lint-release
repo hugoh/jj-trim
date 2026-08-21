@@ -10,10 +10,9 @@ ec=$?
 printf '%s\n' "$out"
 [ "$ec" -eq 0 ] && exit 0
 
-# brews (Formula) is deprecated upstream in favor of homebrew_casks, but
-# used here intentionally: casks aren't code-signed and get flagged as
-# malware by Gatekeeper. This exemption should move upstream to
-# hugoh/go-tools if this becomes a recurring pattern across repos.
+# goreleaser check fails even on configs it calls "valid" if they use a
+# deprecated property (e.g. brews instead of homebrew_casks). Deprecation
+# is a lint concern, not a validity one, so don't hard-fail CI on it.
 if [ "$ec" -eq 2 ] && printf '%s\n' "$out" | grep -q 'configuration is valid, but uses deprecated properties'; then
   exit 0
 fi
