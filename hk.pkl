@@ -53,7 +53,7 @@ local linters = new Mapping<String, Step> {
     check = "cpd"
   }
   ["goreleaser"]= {
-    check = "goreleaser check"
+    check = "mise run lint-release"
   }
 }
 
