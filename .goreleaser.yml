@@ -42,7 +42,7 @@ nfpms:
       - rpm
     bindir: /usr/bin
 
-homebrew_casks:
+brews:
   - name: jj-trim
     repository:
       owner: hugoh
@@ -50,8 +50,6 @@ homebrew_casks:
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
     description: "Clean up merged bookmarks and abandoned anonymous commits in jj repositories"
     homepage: "https://github.com/hugoh/jj-trim"
-    binaries:
-      - jj-trim
 changelog:
   use: git
   sort: asc
