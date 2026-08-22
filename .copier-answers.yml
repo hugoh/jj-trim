@@ -3,20 +3,15 @@ _commit: v1.18.10
 _src_path: https://github.com/hugoh/go-tools.git
 coverage_total: 90
 golangci_extra_disable:
-- depguard
-- exhaustruct
 - godoclint
 - ireturn
-- testpackage
 - varnamelen
 golangci_extra_exclusions: []
 golangci_settings: "revive:\n  rules:\n    - name: redefines-builtin-id\n      disabled:\
     \ true\n    - name: exported\n      disabled: true\n    - name: unused-parameter\n\
     \    - name: unused-receiver\ntagliatelle:\n  case:\n    rules:\n      json: snake\n"
 golangci_test_exclude_linters:
-- err113
 - funlen
-- varnamelen
 goreleaser_before_hooks: []
 goreleaser_version_pkg: main
 has_executable: true
