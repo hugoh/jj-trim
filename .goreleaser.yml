@@ -43,11 +43,18 @@ nfpms:
     bindir: /usr/bin
 
 brews:
+<<<<<<< before updating
+=======
+  # DEPRECATED but intentional: homebrew_casks requires Gatekeeper-signed
+  # binaries or macOS flags the cask as malware. brews (Formula) has no
+  # such requirement. See https://goreleaser.com/deprecations/#brews
+>>>>>>> after updating
   - name: jj-trim
     repository:
       owner: hugoh
       name: homebrew-tap
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    directory: Formula
     description: "Clean up merged bookmarks and abandoned anonymous commits in jj repositories"
     homepage: "https://github.com/hugoh/jj-trim"
 changelog:
