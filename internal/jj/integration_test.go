@@ -21,13 +21,24 @@ import (
 // trunk.
 const mergedBookmarkName = "merged"
 
-// requireJJ skips the test if the jj binary isn't on PATH. Runtime-skipped,
-// not build-tag-gated: CI always has jj via mise, so the skip never
-// triggers there.
+// requireIntegration reports whether a missing jj binary must fail the test
+// instead of skipping it. The go-tool-compat CI matrix sets
+// REQUIRE_INTEGRATION=1 so a broken jj release can't pass by being skipped.
+func requireIntegration() bool {
+	return os.Getenv("REQUIRE_INTEGRATION") == "1"
+}
+
+// requireJJ skips the test if the jj binary isn't on PATH — or fails it when
+// REQUIRE_INTEGRATION=1. Runtime-gated, not build-tag-gated: CI always has jj
+// via mise, so the skip never triggers there.
 func requireJJ(t *testing.T) {
 	t.Helper()
 
 	if _, err := exec.LookPath("jj"); err != nil {
+		if requireIntegration() {
+			t.Fatal("jj not found on PATH but REQUIRE_INTEGRATION=1")
+		}
+
 		t.Skip("jj not found on PATH")
 	}
 }

@@ -1,0 +1,33 @@
+name: jj compatibility
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "internal/jj/**"
+      - "internal/classify/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/jj-compat.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "internal/jj/**"
+      - "internal/classify/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/jj-compat.yml"
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC — catch jj releases landed between PRs
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  jj:
+    uses: hugoh/go-tools/.github/workflows/go-tool-compat.yml@main # TODO pin after go-tools release
+    permissions:
+      contents: read
+    with:
+      tool: jj
+      test-target: "./internal/jj/..."
