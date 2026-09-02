@@ -25,7 +25,7 @@ permissions: {}
 
 jobs:
   jj:
-    uses: hugoh/go-tools/.github/workflows/go-tool-compat.yml@main # TODO pin after go-tools release
+    uses: hugoh/go-tools/.github/workflows/go-tool-compat.yml@2ce644c50c3878427a4fb98ca076ad3c3463f016 # v1.22.0
     permissions:
       contents: read
     with:
