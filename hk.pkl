@@ -1,6 +1,7 @@
-amends "package://github.com/jdx/hk/releases/download/v1.56.0/hk@1.56.0#/Config.pkl"
-import "package://github.com/jdx/hk/releases/download/v1.56.0/hk@1.56.0#/Builtins.pkl"
-import "package://github.com/hugoh/hk-config/releases/download/v1.4.1/hk-config@1.4.1#/base.pkl" as Base
+// DO NOT EDIT — managed by hugoh/go-tools via copier.
+amends "package://github.com/jdx/hk/releases/download/v1.57.0/hk@1.57.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.57.0/hk@1.57.0#/Builtins.pkl"
+import "package://github.com/hugoh/hk-config/releases/download/v1.7.0/hk-config@1.7.0#/base.pkl" as Base
 
 min_hk_version = Base.min_hk_version
 

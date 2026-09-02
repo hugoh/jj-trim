@@ -161,7 +161,8 @@ func newModel(
 	if action.CascadeAction != nil && action.markKey() == action.CascadeAction.markKey() {
 		panic(fmt.Sprintf(
 			"review: Action.Verb %q and CascadeAction.Verb %q collide on mark key %q",
-			action.Verb, action.CascadeAction.Verb, action.markKey()))
+			action.Verb, action.CascadeAction.Verb, action.markKey(),
+		))
 	}
 
 	listItems := make([]list.Item, 0, len(items))
@@ -933,7 +934,8 @@ func (m *model) listView() string {
 	var b strings.Builder
 
 	b.WriteString(st.Header.Width(m.width).Render(
-		"jj-trim review   [H/M/L] = confidence it's safe to delete: high/medium/low"))
+		"jj-trim review   [H/M/L] = confidence it's safe to delete: high/medium/low",
+	))
 	b.WriteString("\n")
 	b.WriteString(m.list.View())
 	b.WriteString("\n")

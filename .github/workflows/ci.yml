@@ -1,3 +1,4 @@
+# DO NOT EDIT — managed by hugoh/go-tools via copier.
 ---
 name: CI
 
@@ -18,18 +19,18 @@ permissions: {}
 
 jobs:
   hk:
-    uses: hugoh/go-tools/.github/workflows/go-hk.yml@37285d93779492692decb112f28f287551effedd
+    uses: hugoh/go-tools/.github/workflows/go-hk.yml@2ce644c50c3878427a4fb98ca076ad3c3463f016 # v1.22.0
     permissions:
       contents: read
 
   goci:
-    uses: hugoh/go-tools/.github/workflows/go-ci.yml@37285d93779492692decb112f28f287551effedd
+    uses: hugoh/go-tools/.github/workflows/go-ci.yml@2ce644c50c3878427a4fb98ca076ad3c3463f016 # v1.22.0
     permissions:
       contents: read
 
   release:
     needs: [hk, goci]
-    uses: hugoh/go-tools/.github/workflows/go-release.yml@37285d93779492692decb112f28f287551effedd
+    uses: hugoh/go-tools/.github/workflows/go-release.yml@2ce644c50c3878427a4fb98ca076ad3c3463f016 # v1.22.0
     permissions:
       contents: write
     with:

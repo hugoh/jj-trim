@@ -1,3 +1,4 @@
+# DO NOT EDIT — managed by hugoh/go-tools via copier.
 root = true
 
 [mise-tasks/*]
