@@ -3,20 +3,8 @@ name: jj compatibility
 on:
   push:
     branches: [main]
-    paths:
-      - "internal/jj/**"
-      - "internal/classify/**"
-      - "go.mod"
-      - "go.sum"
-      - ".github/workflows/jj-compat.yml"
   pull_request:
     branches: [main]
-    paths:
-      - "internal/jj/**"
-      - "internal/classify/**"
-      - "go.mod"
-      - "go.sum"
-      - ".github/workflows/jj-compat.yml"
   schedule:
     - cron: "0 6 * * 1" # Mondays 06:00 UTC — catch jj releases landed between PRs
   workflow_dispatch:
@@ -24,10 +12,64 @@ on:
 permissions: {}
 
 jobs:
+  # Always triggers (no path filter on the workflow itself) so the gate
+  # check below posts on every PR — GitHub never satisfies a required
+  # status check that a path-filtered trigger simply never runs. This job
+  # decides whether the expensive jj matrix actually needs to do anything.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      jj: ${{ steps.filter.outputs.jj }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            jj:
+              - "internal/jj/**"
+              - "internal/classify/**"
+              - "go.mod"
+              - "go.sum"
+              - ".github/workflows/jj-compat.yml"
+
   jj:
+    needs: [changes]
+    if: needs.changes.outputs.jj == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     uses: hugoh/go-tools/.github/workflows/go-tool-compat.yml@977317b2cb6a46b4d47c531556fbb991a9bbde52 # v1.23.0
     permissions:
       contents: read
     with:
       tool: jj
       test-target: "./internal/jj/..."
+
+  # Stable check name for branch protection: the reusable workflow's own
+  # "jj / versions" and "jj / gate" checks only get created once its jobs
+  # actually run, so a skipped `jj` job (unrelated paths) posts neither —
+  # leaving branch protection waiting forever. This wrapper always runs and
+  # passes trivially when `jj` was skipped, so it's what's pinned as the
+  # required context instead.
+  jj-gate:
+    if: always()
+    needs: [changes, jj]
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Require the jj compat matrix to have passed, when relevant
+        env:
+          JJ_CHANGED: ${{ needs.changes.outputs.jj }}
+          JJ_RESULT: ${{ needs.jj.result }}
+        run: |
+          set -euo pipefail
+          echo "jj_changed=$JJ_CHANGED jj=$JJ_RESULT"
+          if [ "$JJ_CHANGED" != "true" ] && [ "${{ github.event_name }}" != "workflow_dispatch" ] && [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "no jj-relevant changes; skipping"
+            exit 0
+          fi
+          [ "$JJ_RESULT" = success ] || exit 1
