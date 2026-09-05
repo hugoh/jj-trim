@@ -1,0 +1,21 @@
+---
+name: rerun-transient-failures
+
+on:
+  workflow_run:
+    workflows: [CI, jj compatibility]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  rerun:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - uses: hugoh/rerun-transient-failures@73249a7c55b4dee21796eaf896bdeee66a188b6a # v0.1.2
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
