@@ -52,6 +52,10 @@ brews:
       owner: hugoh
       name: homebrew-tap
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+      # main requires a PR (branch protection) - go-release.yml merges it
+      # right after this step.
+      pull_request:
+        enabled: true
     directory: Formula
     description: "Clean up merged bookmarks and abandoned anonymous commits in jj repositories"
     homepage: "https://github.com/hugoh/jj-trim"
