@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -146,8 +146,8 @@ func pluralize(n int, unit string) string {
 // same parent set (order of ParentChangeIDs doesn't matter — merge-commit
 // parent lists are sorted before joining). See GitCommitDuplicates.
 func (c Candidate) DuplicateKey() string {
-	parents := append([]string(nil), c.ParentChangeIDs...)
-	sort.Strings(parents)
+	parents := slices.Clone(c.ParentChangeIDs)
+	slices.Sort(parents)
 
 	return strings.Join(parents, ",") + "|" + c.DiffHash
 }
@@ -249,7 +249,7 @@ func ParseCandidates(jsonl string) ([]Candidate, error) {
 // DESIGN.md's review-flow ordering (oldest, least-likely-active forks
 // first).
 func SortOldestFirst(candidates []Candidate) {
-	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].CommitTimestamp.Before(candidates[j].CommitTimestamp)
+	slices.SortFunc(candidates, func(a, b Candidate) int {
+		return a.CommitTimestamp.Compare(b.CommitTimestamp)
 	})
 }
