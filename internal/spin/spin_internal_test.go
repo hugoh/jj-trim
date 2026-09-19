@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/hugoh/jj-trim/internal/tty"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -169,4 +171,37 @@ func readAllBlocking(f *os.File) string {
 			return out.String()
 		}
 	}
+}
+
+func TestAnimate_EraseCoversDisplayWidthNotByteLength(t *testing.T) {
+	withFastTicks(t)
+
+	var out bytes.Buffer
+
+	done := make(chan struct{})
+	finished := make(chan struct{})
+
+	go func() {
+		animate(&out, "wait", done)
+		close(finished)
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	close(done)
+	<-finished
+
+	frame := out.String()
+	eraseStart := strings.LastIndex(frame, "\r"+strings.Repeat(" ", 1))
+	require.GreaterOrEqual(t, eraseStart, 0)
+
+	erase := frame[eraseStart:]
+	drawn := spinner.Dot.Frames[0] + " wait"
+	require.Greater(
+		t,
+		len(drawn),
+		ansi.StringWidth(drawn),
+		"frames must be multi-byte for this test to bite",
+	)
+	assert.Equal(t, "\r"+strings.Repeat(" ", ansi.StringWidth(drawn))+"\r", erase,
+		"erase must be exactly the drawn display width, not its byte length")
 }

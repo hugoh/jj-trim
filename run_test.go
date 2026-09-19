@@ -1923,3 +1923,37 @@ func TestBookmarksPreviewRevset(t *testing.T) {
 		})
 	}
 }
+
+func TestExitCode(t *testing.T) {
+	t.Parallel()
+
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	boom := errors.New("boom")
+
+	tests := []struct {
+		name string
+		ctx  context.Context //nolint:containedctx // table input
+		err  error
+		want int
+	}{
+		{name: "success", ctx: t.Context(), err: nil, want: exitOK},
+		{name: "plain failure", ctx: t.Context(), err: boom, want: exitRuntime},
+		{
+			name: "failure after a termination signal",
+			ctx:  cancelled,
+			err:  boom,
+			want: exitInterrupted,
+		},
+		{name: "signal but nothing failed", ctx: cancelled, err: nil, want: exitOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tt.want, exitCode(tt.ctx, tt.err))
+		})
+	}
+}

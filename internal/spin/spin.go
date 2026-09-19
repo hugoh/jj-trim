@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/spinner"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/hugoh/jj-trim/internal/tty"
 )
 
@@ -76,9 +77,7 @@ func animate(w io.Writer, label string, done <-chan struct{}) {
 			return
 		case <-ticker.C:
 			line := frames[index%len(frames)] + " " + label
-			if len(line) > maxWidth {
-				maxWidth = len(line)
-			}
+			maxWidth = max(maxWidth, ansi.StringWidth(line))
 
 			_, _ = fmt.Fprint(w, "\r"+line)
 			index++

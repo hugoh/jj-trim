@@ -13,7 +13,9 @@ import (
 
 // ErrNotInteractive is returned by Require when stdin or stdout isn't a
 // terminal.
-var ErrNotInteractive = errors.New("requires an interactive terminal")
+var ErrNotInteractive = errors.New(
+	"requires an interactive terminal (use the non-interactive preview/apply subcommands instead)",
+)
 
 // IsTerminal is swapped out in tests — there's no portable way to fake "is
 // a real terminal" for an arbitrary *os.File without an actual pty, and CI

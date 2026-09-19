@@ -1,10 +1,12 @@
 package browse
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/hugoh/jj-trim/internal/trimconfig"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -54,6 +56,34 @@ func TestHandleLoadingKey(t *testing.T) {
 			if tt.wantNoCmd {
 				assert.Nil(cmd)
 			}
+		})
+	}
+}
+
+func TestHandleFiltersKey_CtrlCQuits(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		mode Mode
+	}{
+		{name: "bookmarks filters", mode: ModeBookmarks},
+		{name: "commits filters", mode: ModeCommits},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			m := &model{
+				screen:  screenFilters,
+				filters: newFiltersForm(tt.mode, trimconfig.Config{}),
+			}
+
+			_, cmd := m.handleFiltersKey(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+
+			require.NotNil(t, cmd)
+			assert.IsType(t, tea.QuitMsg{}, cmd())
 		})
 	}
 }
@@ -203,4 +233,42 @@ func TestStaleAfterString(t *testing.T) {
 			assert.Equal(t, tt.want, staleAfterString(tt.d))
 		})
 	}
+}
+
+func TestChromeFitsNarrowTerminal(t *testing.T) {
+	t.Parallel()
+
+	const width = 24
+
+	m := &model{width: width, height: 10, hasDarkBG: true, mode: ModeCommits}
+	filters := newFiltersForm(ModeBookmarks, trimconfig.Config{})
+
+	tests := []struct {
+		name string
+		view string
+	}{
+		{name: "tab bar", view: m.tabBar()},
+		{name: "loading", view: m.loadingView()},
+		{name: "bookmarks filters", view: filters.view(width, true)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			for line := range strings.SplitSeq(tt.view, "\n") {
+				require.LessOrEqual(t, lipgloss.Width(line), width, "line %q", line)
+			}
+		})
+	}
+
+	assert.Equal(t, tabBarH, strings.Count(m.tabBar(), "\n")+1)
+}
+
+func TestView_TooSmallTerminalShowsMessage(t *testing.T) {
+	t.Parallel()
+
+	m := &model{width: 20, height: 5, hasDarkBG: true, screen: screenLoading}
+
+	assert.Contains(t, m.View().Content, "too small")
 }

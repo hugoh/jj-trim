@@ -2,6 +2,9 @@ package browse
 
 import (
 	"context"
+	"fmt"
+	"image/color"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -122,7 +125,7 @@ func deleteOneItemOpts(jj.Runner) Options {
 	item := review.Item{
 		IDs:       []string{"w"},
 		Candidate: classify.Candidate{ChangeID: "w"},
-		Legend:    classify.LegendEntry{ChangeIDShort: "w"},
+		Legend:    classify.LegendEntry{ChangeIDShort: "w", Reason: classify.ReasonNoDescription},
 	}
 
 	return Options{
@@ -215,7 +218,7 @@ func TestModel_TabAndFilters_IgnoredWhileChildNotIdle(t *testing.T) {
 
 	fake := &jj.Fake{}
 
-	m := loadedModel(t, newModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake)))
+	m := loadedModel(t, buildModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake)))
 
 	next, _ := m.Update(tea.KeyPressMsg{Code: 'd'}) // mark item 0 for delete
 	m, _ = next.(*model)
@@ -260,7 +263,7 @@ func TestModel_ToggleMode_CarriesForwardAppliedResult(t *testing.T) {
 
 	fake := deleteOneItemFake(t)
 
-	m := loadedModel(t, newModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake)))
+	m := loadedModel(t, buildModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake)))
 
 	m = applyDeleteThenDismiss(t, m)
 
@@ -297,7 +300,7 @@ func TestModel_ApplyFilters_CarriesForwardAppliedResult(t *testing.T) {
 
 	fake := deleteOneItemFake(t)
 
-	m := loadedModel(t, newModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake)))
+	m := loadedModel(t, buildModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake)))
 
 	m = applyDeleteThenDismiss(t, m)
 
@@ -324,4 +327,71 @@ func TestModel_ApplyFilters_CarriesForwardAppliedResult(t *testing.T) {
 		"the batch applied before saving filters must survive the rebuild",
 	)
 	assert.Len(t, result.Applied, 1)
+}
+
+func TestSessionLoaded_ChildInheritsLearnedLightTheme(t *testing.T) {
+	t.Parallel()
+
+	fake := &jj.Fake{}
+	m := buildModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake))
+
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = asModel(t, next)
+
+	next, _ = m.Update(tea.BackgroundColorMsg{Color: color.White})
+	m = asModel(t, next)
+
+	m = driveLoad(t, m, m.Init())
+
+	content := m.View().Content
+
+	assert.Contains(t, content, "38;5;241", "light-theme footer color")
+	assert.NotContains(t, content, "38;5;238", "dark-theme rule color")
+}
+
+func TestInit_RequestsBackgroundColor(t *testing.T) {
+	t.Parallel()
+
+	fake := &jj.Fake{}
+	m := buildModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake))
+
+	batch, ok := m.Init()().(tea.BatchMsg)
+	require.True(t, ok)
+
+	var types []string
+
+	for _, cmd := range batch {
+		if cmd != nil {
+			types = append(types, fmt.Sprintf("%T", cmd()))
+		}
+	}
+
+	assert.Contains(t, strings.Join(types, " "), "tea.backgroundColorMsg", "got %v", types)
+}
+
+func TestHelp_ListsBrowseKeysAndBlocksChromeKeys(t *testing.T) {
+	t.Parallel()
+
+	fake := &jj.Fake{}
+	m := buildModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake))
+
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = driveLoad(t, asModel(t, next), m.Init())
+
+	next, _ = m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
+	m = asModel(t, next)
+
+	view := m.View().Content
+	assert.Contains(t, view, "Help")
+	assert.Contains(t, view, "switch mode")
+	assert.Contains(t, view, "filters")
+
+	childBefore := m.child
+
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m = asModel(t, next)
+
+	assert.Equal(t, ModeCommits, m.mode, "tab only closes the overlay")
+	assert.Same(t, childBefore, m.child)
+	assert.Equal(t, screenChild, m.screen)
 }
