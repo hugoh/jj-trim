@@ -47,13 +47,9 @@ func markBinding(a Action) key.Binding {
 	return key.NewBinding(key.WithKeys(a.markKey()), key.WithHelp(a.markKey(), a.Verb))
 }
 
-// ShortHelp implements help.KeyMap; help stays last so fitHelp can always keep it.
-func (k keyMap) ShortHelp() []key.Binding {
+// ShortHelp lists the footer bindings; help stays last so fitHelp can always keep it.
+func (k *keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{k.mark, k.cascade, k.unmark, k.next, k.cancel, k.scroll, k.page, k.help}
-}
-
-func (k keyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{k.ShortHelp()}
 }
 
 func helpEntry(keys, desc string) key.Binding {
