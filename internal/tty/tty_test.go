@@ -67,3 +67,9 @@ func TestRequire(t *testing.T) {
 		})
 	}
 }
+
+func TestErrNotInteractive_PointsAtNonInteractiveCommands(t *testing.T) {
+	t.Parallel()
+
+	assert.Contains(t, ErrNotInteractive.Error(), "preview")
+}

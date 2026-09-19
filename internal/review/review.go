@@ -11,6 +11,7 @@ import (
 	"io"
 	"strings"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"github.com/hugoh/jj-trim/internal/classify"
 	"github.com/hugoh/jj-trim/internal/jj"
@@ -114,7 +115,17 @@ type ChildStatus interface {
 
 // Idle implements ChildStatus.
 func (m *model) Idle() bool {
-	return m.screen == screenList
+	return m.screen == screenList && !m.showHelp
+}
+
+// HelpExtender lets an embedding model add keys to the ? overlay.
+type HelpExtender interface {
+	AddHelp(bindings ...key.Binding)
+}
+
+// AddHelp implements HelpExtender.
+func (m *model) AddHelp(bindings ...key.Binding) {
+	m.extraHelp = append(m.extraHelp, bindings...)
 }
 
 // NewModel builds the review Bubbletea model directly, without running it —

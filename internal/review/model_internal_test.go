@@ -9,7 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/exp/teatest/v2"
 	"github.com/hugoh/jj-trim/internal/classify"
 	"github.com/hugoh/jj-trim/internal/jj"
@@ -552,4 +555,369 @@ func TestResultFromFinalModel_WrongType_ReturnsEmpty(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, Result{}, result)
+}
+
+func TestListView_FitsNarrowTerminal(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct{ width, height int }{
+		{width: 20, height: 12},
+		{width: 40, height: 15},
+		{width: 80, height: 24},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%dx%d", tt.width, tt.height), func(t *testing.T) {
+			t.Parallel()
+
+			longID := strings.Repeat("longchangeid", 8)
+			m := newModel(
+				t.Context(), &jj.Fake{},
+				[]Item{itemWithReason(longID, classify.ReasonNoDescription), wItem()},
+				deleteWithCascade(), noopFetch,
+			)
+			_, _ = m.handleWindowSize(tea.WindowSizeMsg{Width: tt.width, Height: tt.height})
+
+			lines := strings.Split(m.listView(), "\n")
+
+			require.LessOrEqual(t, len(lines), tt.height)
+
+			for _, line := range lines {
+				require.LessOrEqual(t, lipgloss.Width(line), tt.width, "line %q", line)
+			}
+		})
+	}
+}
+
+func manyItemsModel(t *testing.T, n, width, height int) *model {
+	t.Helper()
+
+	items := make([]Item, 0, n)
+	for i := range n {
+		items = append(
+			items,
+			itemWithReason(fmt.Sprintf("id%03d", i), classify.ReasonNoDescription),
+		)
+	}
+
+	m := newModel(t.Context(), &jj.Fake{}, items, deleteWithCascade(), noopFetch)
+	_, _ = m.handleWindowSize(tea.WindowSizeMsg{Width: width, Height: height})
+
+	return m
+}
+
+func TestConfirmView_BoundedAndScrollable(t *testing.T) {
+	t.Parallel()
+
+	const height = 12
+
+	m := manyItemsModel(t, 50, 60, height)
+
+	for range 50 {
+		_, _ = m.handleKey(tea.KeyPressMsg{Code: 'd', Text: "d"})
+	}
+
+	_, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	require.Equal(t, screenConfirm, m.screen)
+
+	view := m.confirmView()
+	lines := strings.Split(view, "\n")
+
+	assert.LessOrEqual(t, len(lines), height)
+	assert.Contains(t, lines[len(lines)-1], "enter=confirm", "footer must stay visible")
+	assert.Contains(t, view, "id000")
+	assert.NotContains(t, view, "id049", "off-screen items are scrolled out, not rendered")
+
+	_, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyPgDown})
+
+	assert.NotContains(t, m.confirmView(), "id000", "page down scrolls the item list")
+}
+
+func TestView_TooSmallTerminalShowsMessage(t *testing.T) {
+	t.Parallel()
+
+	m := manyItemsModel(t, 3, 20, 5)
+
+	assert.Contains(t, m.View().Content, "too small")
+}
+
+func isQuit(cmd tea.Cmd) bool {
+	if cmd == nil {
+		return false
+	}
+
+	_, ok := cmd().(tea.QuitMsg)
+
+	return ok
+}
+
+func TestListQuit_WithMarksNeedsSecondPress(t *testing.T) {
+	t.Parallel()
+
+	quitKeys := []struct {
+		name string
+		key  tea.KeyPressMsg
+	}{
+		{name: "q", key: tea.KeyPressMsg{Code: 'q', Text: "q"}},
+		{name: "esc", key: tea.KeyPressMsg{Code: tea.KeyEscape}},
+	}
+
+	for _, qk := range quitKeys {
+		t.Run(qk.name+" with nothing marked quits at once", func(t *testing.T) {
+			t.Parallel()
+
+			m := manyItemsModel(t, 2, 80, 24)
+
+			_, cmd := m.handleKey(qk.key)
+
+			assert.True(t, isQuit(cmd))
+		})
+
+		t.Run(qk.name+" with marks warns then quits", func(t *testing.T) {
+			t.Parallel()
+
+			m := manyItemsModel(t, 2, 80, 24)
+			_, _ = m.handleKey(tea.KeyPressMsg{Code: 'd', Text: "d"})
+
+			_, cmd := m.handleKey(qk.key)
+			assert.False(t, isQuit(cmd), "first press must not quit")
+			assert.Contains(t, m.tally(), "again to discard")
+
+			_, cmd = m.handleKey(qk.key)
+			assert.True(t, isQuit(cmd), "second press quits")
+		})
+
+		t.Run(qk.name+" warning is disarmed by another key", func(t *testing.T) {
+			t.Parallel()
+
+			m := manyItemsModel(t, 2, 80, 24)
+			_, _ = m.handleKey(tea.KeyPressMsg{Code: 'd', Text: "d"})
+			_, _ = m.handleKey(qk.key)
+			_, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyDown})
+
+			assert.NotContains(t, m.tally(), "again to discard")
+
+			_, cmd := m.handleKey(qk.key)
+			assert.False(t, isQuit(cmd), "must warn again after being disarmed")
+		})
+	}
+
+	t.Run("ctrl+c always quits immediately", func(t *testing.T) {
+		t.Parallel()
+
+		m := manyItemsModel(t, 2, 80, 24)
+		_, _ = m.handleKey(tea.KeyPressMsg{Code: 'd', Text: "d"})
+
+		_, cmd := m.handleKey(ctrlKey('c'))
+
+		assert.True(t, isQuit(cmd))
+	})
+}
+
+func TestNewModel_ReservedMarkKeyPanics(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		action Action
+	}{
+		{
+			name:   "primary verb starts with q",
+			action: Action{Verb: "quarantine", Past: "quarantined"},
+		},
+		{name: "primary verb starts with u", action: Action{Verb: "undo", Past: "undone"}},
+		{
+			name: "cascade verb starts with u",
+			action: Action{
+				Verb: testVerbDelete, Past: testPastDeleted,
+				CascadeAction: &Action{Verb: "unlink", Past: "unlinked"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Panics(t, func() {
+				newModel(t.Context(), &jj.Fake{}, nil, tt.action, noopFetch)
+			})
+		})
+	}
+}
+
+func TestTally_HelpShrinksToWidth(t *testing.T) {
+	t.Parallel()
+
+	wide := manyItemsModel(t, 2, 200, 24)
+	narrow := manyItemsModel(t, 2, 60, 24)
+
+	assert.Contains(t, wide.tally(), "ctrl+u/d")
+	assert.NotContains(t, narrow.tally(), "ctrl+u/d")
+	assert.LessOrEqual(t, lipgloss.Width(narrow.tally()), 60)
+}
+
+func wheelDown() tea.MouseWheelMsg { return tea.MouseWheelMsg{Button: tea.MouseWheelDown} }
+
+func TestMouseWheel_ScrollsTheActivePane(t *testing.T) {
+	t.Parallel()
+
+	t.Run("list screen scrolls the detail pane", func(t *testing.T) {
+		t.Parallel()
+
+		m := detailScrollTestModel(t)
+		before := m.list.Index()
+
+		_, _ = m.Update(wheelDown())
+
+		assert.Positive(t, m.detail.YOffset())
+		assert.Equal(t, before, m.list.Index())
+	})
+
+	t.Run("confirm screen scrolls the item list", func(t *testing.T) {
+		t.Parallel()
+
+		m := manyItemsModel(t, 50, 60, 12)
+		for range 50 {
+			_, _ = m.handleKey(tea.KeyPressMsg{Code: 'd', Text: "d"})
+		}
+
+		_, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+		_, _ = m.Update(wheelDown())
+
+		assert.Positive(t, m.confirm.YOffset())
+	})
+
+	t.Run("applied screen scrolls the op log", func(t *testing.T) {
+		t.Parallel()
+
+		m := appliedScreenModel(t)
+		m.opLog.SetContent(fillLines(100, "op"))
+
+		_, _ = m.Update(wheelDown())
+
+		assert.Positive(t, m.opLog.YOffset())
+	})
+}
+
+func helpKey() tea.KeyPressMsg { return tea.KeyPressMsg{Code: '?', Text: "?"} }
+
+func TestHelpOverlay(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		model func(t *testing.T) *model
+		want  []string
+	}{
+		{
+			name: "list screen",
+			model: func(t *testing.T) *model {
+				t.Helper()
+
+				return manyItemsModel(t, 3, 80, 24)
+			},
+			want: []string{
+				testVerbDelete,
+				testVerbAbandon,
+				"unmark",
+				"move",
+				"half page",
+				"cancel",
+			},
+		},
+		{
+			name: "confirm screen",
+			model: func(t *testing.T) *model {
+				t.Helper()
+
+				m := manyItemsModel(t, 3, 80, 24)
+				_, _ = m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+				return m
+			},
+			want: []string{"apply", "back", "scroll"},
+		},
+		{
+			name: "applied screen",
+			model: func(t *testing.T) *model {
+				t.Helper()
+
+				return appliedScreenModel(t)
+			},
+			want: []string{"continue", "scroll"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			m := tt.model(t)
+			_, _ = m.handleWindowSize(tea.WindowSizeMsg{Width: 80, Height: 24})
+			before := m.screen
+
+			_, _ = m.handleKey(helpKey())
+
+			view := m.View().Content
+			require.Contains(t, view, "Help")
+
+			for _, w := range tt.want {
+				assert.Contains(t, view, w)
+			}
+
+			_, cmd := m.handleKey(tea.KeyPressMsg{Code: 'q', Text: "q"})
+			assert.False(t, isQuit(cmd), "the dismissing key is consumed, not acted on")
+			assert.Equal(t, before, m.screen)
+			assert.NotContains(t, m.View().Content, "press any key to close")
+
+			_, _ = m.handleKey(helpKey())
+			_, cmd = m.handleKey(ctrlKey('c'))
+			assert.True(t, isQuit(cmd), "ctrl+c still quits with help open")
+		})
+	}
+}
+
+func TestHelpOverlay_DismissKeyDoesNotMark(t *testing.T) {
+	t.Parallel()
+
+	m := manyItemsModel(t, 3, 80, 24)
+	_, _ = m.handleKey(helpKey())
+	_, _ = m.handleKey(tea.KeyPressMsg{Code: 'd', Text: "d"})
+
+	marked, cascade := m.markedItems()
+	assert.Empty(t, marked)
+	assert.Empty(t, cascade)
+}
+
+func TestHelpOverlay_NotIdle(t *testing.T) {
+	t.Parallel()
+
+	m := manyItemsModel(t, 3, 80, 24)
+	require.True(t, m.Idle())
+
+	_, _ = m.handleKey(helpKey())
+
+	assert.False(t, m.Idle(), "an embedding model must not treat the overlay as idle")
+}
+
+func TestHelpOverlay_ShowsExtraBindings(t *testing.T) {
+	t.Parallel()
+
+	m := manyItemsModel(t, 3, 80, 24)
+	m.AddHelp(key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "switch mode")))
+	_, _ = m.handleKey(helpKey())
+
+	assert.Contains(t, m.View().Content, "switch mode")
+}
+
+func TestTally_AlwaysAdvertisesHelp(t *testing.T) {
+	t.Parallel()
+
+	for _, width := range []int{40, 60, 80, 200} {
+		m := manyItemsModel(t, 2, width, 24)
+
+		assert.Contains(t, ansi.Strip(m.tally()), "? help", "width %d", width)
+		assert.LessOrEqual(t, lipgloss.Width(m.tally()), width)
+	}
 }

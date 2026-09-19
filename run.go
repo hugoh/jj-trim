@@ -54,6 +54,8 @@ const (
 	exitOK      = 0
 	exitRuntime = 1
 	exitUsage   = 2
+	// exitInterrupted is 128+SIGINT (SIGTERM reports it too).
+	exitInterrupted = 130
 )
 
 // defaultStaleAfter is BookmarksCmd.StaleAfter's default when unset.
@@ -143,13 +145,25 @@ func Run(version string, args []string, stdin io.Reader, stdout, stderr io.Write
 		stop()
 	}()
 
-	if err := run(ctx, cli, kongCtx.Command(), stdin, stdout); err != nil {
+	err = run(ctx, cli, kongCtx.Command(), stdin, stdout)
+	if err != nil && ctx.Err() == nil {
 		fprintln(stderr, "error:", err)
-
-		return exitRuntime
 	}
 
-	return exitOK
+	return exitCode(ctx, err)
+}
+
+// exitCode exits quietly after a termination signal: any error then is just the
+// interrupt unwinding (e.g. the TUI's "program was killed").
+func exitCode(ctx context.Context, err error) int {
+	switch {
+	case err == nil:
+		return exitOK
+	case ctx.Err() != nil:
+		return exitInterrupted
+	default:
+		return exitRuntime
+	}
 }
 
 func run(ctx context.Context, cli CLI, command string, stdin io.Reader, stdout io.Writer) error {

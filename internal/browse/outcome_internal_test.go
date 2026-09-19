@@ -90,13 +90,16 @@ func TestResultFromFinishedModel_ChildErrorKeepsResult(t *testing.T) {
 		{
 			IDs:       []string{"w"},
 			Candidate: classify.Candidate{ChangeID: "w"},
-			Legend:    classify.LegendEntry{ChangeIDShort: "w"},
+			Legend: classify.LegendEntry{
+				ChangeIDShort: "w",
+				Reason:        classify.ReasonNoDescription,
+			},
 		},
 		{
 			IDs: []string{"a"}, CascadeIDs: []string{"chain-a"},
 			Candidate: classify.Candidate{
 				ChangeID: "a",
-			}, Legend: classify.LegendEntry{ChangeIDShort: "a"},
+			}, Legend: classify.LegendEntry{ChangeIDShort: "a", Reason: classify.ReasonNoDescription},
 		},
 	}
 	opts := Options{

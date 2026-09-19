@@ -6,9 +6,11 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/hugoh/jj-trim/internal/jj"
 	"github.com/hugoh/jj-trim/internal/review"
 	"github.com/hugoh/jj-trim/internal/trimconfig"
@@ -67,6 +69,8 @@ type model struct {
 
 	width, height int
 	hasDarkBG     bool
+	// last terminal background report, replayed into each new child
+	background *tea.BackgroundColorMsg
 
 	err error
 }
@@ -93,6 +97,7 @@ func (m *model) Init() tea.Cmd {
 	return tea.Batch(
 		loadSessionCmd(m.ctx, m.runner, m.cfg, m.builderFor(m.mode), m.mode),
 		m.spin.Tick,
+		tea.RequestBackgroundColor,
 	)
 }
 
@@ -134,6 +139,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if bgMsg, ok := msg.(tea.BackgroundColorMsg); ok {
 		m.hasDarkBG = bgMsg.IsDark()
+		m.background = &bgMsg
 
 		return m, m.forwardToChild(msg)
 	}
@@ -166,6 +172,10 @@ func (m *model) View() tea.View {
 		return tuistyle.AltScreenView("")
 	}
 
+	if tuistyle.TooSmall(m.width, m.height-tabBarH) {
+		return tuistyle.TooSmallView(m.width, m.height)
+	}
+
 	switch m.screen {
 	case screenLoading:
 		return tuistyle.AltScreenView(m.loadingView())
@@ -189,7 +199,7 @@ func (m *model) loadingView() string {
 		label = "Loading commits…"
 	}
 
-	return st.Header.Width(m.width).Render(m.spin.View() + " " + label)
+	return tuistyle.FitLine(st.Header, m.width, m.spin.View()+" "+label)
 }
 
 // forwardToChild forwards msg to m.child if it exists — a no-op while
@@ -241,6 +251,20 @@ func (m *model) handleSessionLoaded(msg sessionLoadedMsg) (tea.Model, tea.Cmd) {
 	)
 	m.pendingCarry = review.Result{}
 	m.screen = screenChild
+
+	if m.background != nil {
+		m.child, _ = m.child.Update(*m.background)
+	}
+
+	if he, ok := m.child.(review.HelpExtender); ok {
+		he.AddHelp(
+			key.NewBinding(
+				key.WithKeys("tab"),
+				key.WithHelp("tab", "switch mode (bookmarks/commits)"),
+			),
+			key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "edit filters")),
+		)
+	}
 
 	var sizeCmd tea.Cmd
 
@@ -390,6 +414,8 @@ func (m *model) builderFor(mode Mode) Builder {
 
 func (m *model) handleFiltersKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
 	case "esc":
 		m.screen = screenChild
 		m.filters = nil
@@ -482,9 +508,9 @@ func (m *model) tabBar() string {
 		b.WriteString(" ")
 	}
 
-	b.WriteString(" tab=switch mode  f=filters")
+	b.WriteString(" tab=switch mode  f=filters  ?=help")
 
-	return st.Header.Width(m.width).Render(b.String())
+	return tuistyle.FitLine(st.Header, m.width, b.String())
 }
 
 // filtersForm is the in-flow filters overlay: text fields for bookmarks
@@ -669,7 +695,7 @@ func (f *filtersForm) view(width int, hasDarkBG bool) string {
 
 	var b strings.Builder
 
-	b.WriteString(st.Header.Width(width).Render("Filters — " + f.mode.String()))
+	b.WriteString(tuistyle.FitLine(st.Header, width, "Filters — "+f.mode.String()))
 	b.WriteString("\n")
 	b.WriteString(tuistyle.RuleLine(width, st.Rule))
 	b.WriteString("\n")
@@ -713,5 +739,14 @@ func (f *filtersForm) view(width int, hasDarkBG bool) string {
 	b.WriteString("\n")
 	b.WriteString(st.Footer.Render("tab=next field  enter=save  esc=cancel"))
 
-	return b.String()
+	return truncateLines(b.String(), width)
+}
+
+func truncateLines(s string, width int) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = ansi.Truncate(line, width, "…")
+	}
+
+	return strings.Join(lines, "\n")
 }

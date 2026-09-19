@@ -198,6 +198,8 @@ func dismissAndGetOutcome(t *testing.T, tm *teatest.TestModel) (review.Result, e
 	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
 		return strings.Contains(string(bts), "jj-trim review")
 	})
+	// A failed item stays marked, so the first q only warns; the second confirms.
+	tm.Send(tea.KeyPressMsg{Code: 'q'})
 	tm.Send(tea.KeyPressMsg{Code: 'q'})
 	fm := tm.FinalModel(t, teatest.WithFinalTimeout(5*time.Second))
 	fs, ok := fm.(review.FinishedSession)
@@ -435,7 +437,8 @@ func TestReview_Cancel_AppliesNothing(t *testing.T) {
 	tm := newTestModel(t, fake, testItems(t), action)
 
 	tm.Send(tea.KeyPressMsg{Code: 'a'}) // mark item 0
-	tm.Send(tea.KeyPressMsg{Code: 'q'}) // cancel, even though something is marked
+	tm.Send(tea.KeyPressMsg{Code: 'q'}) // first press only warns: something is marked
+	tm.Send(tea.KeyPressMsg{Code: 'q'}) // second press cancels
 	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
 
 	assert.Empty(t, fake.Calls, "cancel must not apply anything, even if items were marked")

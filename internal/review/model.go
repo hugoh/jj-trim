@@ -4,15 +4,22 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/hugoh/jj-trim/internal/classify"
 	"github.com/hugoh/jj-trim/internal/jj"
 	"github.com/hugoh/jj-trim/internal/tuistyle"
 )
+
+const overlayChromeH = 4
 
 type screen int
 
@@ -96,11 +103,11 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	// giving it contrast against the plain-background detail pane below.
 	switch {
 	case index == m.Index():
-		line = st.Selected.Width(m.Width()).Render(line)
+		line = tuistyle.FitLine(st.Selected, m.Width(), line)
 	case ri.decision != decisionPending:
-		line = st.Marked.Width(m.Width()).Render(line)
+		line = tuistyle.FitLine(st.Marked, m.Width(), line)
 	default:
-		line = st.ListRow.Width(m.Width()).Render(line)
+		line = tuistyle.FitLine(st.ListRow, m.Width(), line)
 	}
 
 	_, _ = fmt.Fprint(w, line)
@@ -126,6 +133,14 @@ type model struct {
 	// fetchDetailCmd/handleDetailFetched's pattern for the list's own
 	// detail pane.
 	opLog viewport.Model
+
+	confirm viewport.Model
+
+	keys      keyMap
+	help      help.Model
+	quitArmed bool
+	showHelp  bool
+	extraHelp []key.Binding
 
 	screen        screen
 	width, height int
@@ -185,18 +200,11 @@ func newModel(
 		cascadeLetter = strings.ToUpper(action.CascadeAction.markKey())
 	}
 
-	l := list.New(listItems, itemDelegate{
+	l := newBareList(listItems, itemDelegate{
 		hasDarkBG:     true,
 		actionLetter:  actionLetter,
 		cascadeLetter: cascadeLetter,
-	}, 0, 0)
-	l.SetShowTitle(false)
-	l.SetShowFilter(false)
-	l.SetShowStatusBar(false)
-	l.SetShowPagination(false)
-	l.SetShowHelp(false)
-	l.DisableQuitKeybindings()
-	l.SetFilteringEnabled(false)
+	})
 
 	// SoftWrap: the detail pane's reason header now carries a full-sentence
 	// Long description (see reasonHeader) — without it, that text runs off
@@ -214,10 +222,40 @@ func newModel(
 		detail:        detail,
 		detailCache:   make(map[int]string, len(items)),
 		opLog:         viewport.New(),
+		confirm:       newConfirmViewport(),
+		keys:          newKeyMap(action),
+		help:          newHelp(true),
 		hasDarkBG:     true,
 		actionLetter:  actionLetter,
 		cascadeLetter: cascadeLetter,
 	}
+}
+
+func newBareList(items []list.Item, delegate itemDelegate) list.Model {
+	l := list.New(items, delegate, 0, 0)
+	l.SetShowTitle(false)
+	l.SetShowFilter(false)
+	l.SetShowStatusBar(false)
+	l.SetShowPagination(false)
+	l.SetShowHelp(false)
+	l.DisableQuitKeybindings()
+	l.SetFilteringEnabled(false)
+
+	return l
+}
+
+func newHelp(hasDarkBG bool) help.Model {
+	h := help.New()
+	h.Styles = help.DefaultStyles(hasDarkBG)
+
+	return h
+}
+
+func newConfirmViewport() viewport.Model {
+	v := viewport.New()
+	v.SoftWrap = true
+
+	return v
 }
 
 func (m *model) Init() tea.Cmd {
@@ -230,6 +268,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleWindowSize(msg)
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
+	case tea.MouseWheelMsg:
+		return m.handleMouseWheel(msg)
 	case detailFetchedMsg:
 		return m.handleDetailFetched(msg)
 	case appliedMsg:
@@ -254,6 +294,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *model) View() tea.View {
 	if !m.ready {
 		return tuistyle.AltScreenView("")
+	}
+
+	if tuistyle.TooSmall(m.width, m.height) {
+		return tuistyle.TooSmallView(m.width, m.height)
+	}
+
+	if m.showHelp {
+		return tuistyle.AltScreenView(m.helpView())
 	}
 
 	switch m.screen {
@@ -287,6 +335,7 @@ func (m *model) pendingError() error {
 // item rendering picks up the adaptive colors — see tuistyle.New.
 func (m *model) handleBackgroundColor(msg tea.BackgroundColorMsg) (tea.Model, tea.Cmd) {
 	m.hasDarkBG = msg.IsDark()
+	m.help.Styles = help.DefaultStyles(m.hasDarkBG)
 	m.list.SetDelegate(itemDelegate{
 		hasDarkBG:     m.hasDarkBG,
 		actionLetter:  m.actionLetter,
@@ -369,6 +418,9 @@ func (m *model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.opLog.SetWidth(m.width)
 	m.opLog.SetHeight(opLogH)
 
+	m.confirm.SetWidth(m.width)
+	m.confirm.SetHeight(max(m.height-overlayChromeH, 1))
+
 	return m, nil
 }
 
@@ -402,10 +454,44 @@ func reasonHeader(reason classify.Reason) string {
 	return fmt.Sprintf("[%s] %s\n%s\n\n", info.Confidence.Letter(), info.Short, info.Long)
 }
 
-func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m *model) handleQuitKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	switch msg.String() {
-	case "ctrl+c", "q":
-		return m, tea.Quit
+	case "ctrl+c":
+		return tea.Quit, true
+	case "q":
+		if m.quitBlocked() {
+			return nil, true
+		}
+
+		return tea.Quit, true
+	case keyEsc:
+	default:
+		m.quitArmed = false
+	}
+
+	return nil, false
+}
+
+func (m *model) handleHelpKey(msg tea.KeyPressMsg) bool {
+	switch {
+	case m.showHelp && msg.String() != "ctrl+c":
+		m.showHelp = false
+	case key.Matches(msg, m.keys.help):
+		m.showHelp = true
+	default:
+		return false
+	}
+
+	return true
+}
+
+func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if m.handleHelpKey(msg) {
+		return m, nil
+	}
+
+	if cmd, handled := m.handleQuitKey(msg); handled {
+		return m, cmd
 	}
 
 	switch m.screen {
@@ -428,35 +514,72 @@ func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
+// quitBlocked makes the first q/esc with marked items only warn.
+func (m *model) quitBlocked() bool {
+	if m.screen != screenList || m.quitArmed {
+		return false
+	}
+
+	marked, cascade := m.markedItems()
+	if len(marked)+len(cascade) == 0 {
+		return false
+	}
+
+	m.quitArmed = true
+
+	return true
+}
+
 // handleListMarkKey handles the list screen's fixed keys (esc/enter/u) and
 // the dynamically-derived action/cascade mark keys. The bool return is
 // false when msg wasn't any of these, so the caller falls through to list
 // navigation.
 func (m *model) handleListMarkKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
-	switch msg.String() {
-	case keyEsc:
+	switch {
+	case msg.String() == keyEsc:
+		if m.quitBlocked() {
+			return nil, true
+		}
+
 		return tea.Quit, true
-	case keyEnter:
-		m.screen = screenConfirm
+	case key.Matches(msg, m.keys.next):
+		m.openConfirm()
 
 		return nil, true
-	case "u":
+	case key.Matches(msg, m.keys.unmark):
 		m.clearDecision(m.list.Index())
 
 		return nil, true
-	case m.action.markKey():
+	case key.Matches(msg, m.keys.mark):
 		m.setDecision(m.list.Index(), decisionMarked)
 
 		return m.advanceCursorCmd(), true
-	}
-
-	if m.action.CascadeAction != nil && msg.String() == m.action.CascadeAction.markKey() {
+	case key.Matches(msg, m.keys.cascade):
 		m.setDecision(m.list.Index(), decisionMarkedCascade)
 
 		return m.advanceCursorCmd(), true
 	}
 
 	return nil, false
+}
+
+func (m *model) handleMouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	if m.showHelp {
+		return m, nil
+	}
+
+	switch m.screen {
+	case screenList:
+		m.detail, cmd = m.detail.Update(msg)
+	case screenConfirm:
+		m.confirm, cmd = m.confirm.Update(msg)
+	case screenApplied:
+		m.opLog, cmd = m.opLog.Update(msg)
+	}
+
+	return m, cmd
 }
 
 // handleDetailScrollKey scrolls the detail pane on ctrl+j/k (line) and
@@ -546,7 +669,11 @@ func (m *model) handleConfirmKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 		return m, m.applyCmd()
 	default:
-		return m, nil
+		var cmd tea.Cmd
+
+		m.confirm, cmd = m.confirm.Update(msg)
+
+		return m, cmd
 	}
 }
 
@@ -933,7 +1060,8 @@ func (m *model) listView() string {
 
 	var b strings.Builder
 
-	b.WriteString(st.Header.Width(m.width).Render(
+	b.WriteString(tuistyle.FitLine(
+		st.Header, m.width,
 		"jj-trim review   [H/M/L] = confidence it's safe to delete: high/medium/low",
 	))
 	b.WriteString("\n")
@@ -945,7 +1073,7 @@ func (m *model) listView() string {
 	b.WriteString("\n")
 	b.WriteString(tuistyle.RuleLine(m.width, st.Rule))
 	b.WriteString("\n")
-	b.WriteString(st.Footer.Render(m.tally()))
+	b.WriteString(tuistyle.FitLine(st.Footer, m.width, m.tally()))
 
 	return b.String()
 }
@@ -968,7 +1096,7 @@ func (m *model) appliedView() string {
 		header = "Error"
 	}
 
-	b.WriteString(headerStyle.Width(m.width).Render(header))
+	b.WriteString(tuistyle.FitLine(headerStyle, m.width, header))
 	b.WriteString("\n")
 	b.WriteString(tuistyle.RuleLine(m.width, st.Rule))
 	b.WriteString("\n")
@@ -997,33 +1125,27 @@ func (m *model) appliedView() string {
 
 	footer := "press any key to continue"
 	if m.showingOpLog() {
-		footer = "↑/↓ scroll  enter/esc to continue"
+		footer = "↑/↓ scroll  enter/esc to continue  ?=help"
 	}
 
-	b.WriteString(st.Footer.Render(footer))
+	b.WriteString(tuistyle.FitLine(st.Footer, m.width, footer))
 
 	return b.String()
 }
 
-func (m *model) confirmView() string {
-	st := tuistyle.New(m.hasDarkBG)
+func (m *model) openConfirm() {
+	m.screen = screenConfirm
+	m.confirm.SetContent(m.confirmItems())
+	m.confirm.GotoTop()
+}
 
-	var b strings.Builder
-
-	verb := m.action.Verb
-	if m.action.CascadeAction != nil {
-		verb += "/" + m.action.CascadeAction.Verb
-	}
-
-	b.WriteString(st.Header.Width(m.width).Render(fmt.Sprintf("Confirm: %s the following", verb)))
-	b.WriteString("\n")
-	b.WriteString(tuistyle.RuleLine(m.width, st.Rule))
-	b.WriteString("\n")
-
+func (m *model) confirmItems() string {
 	marked, cascade := m.markedItems()
 	if len(marked) == 0 && len(cascade) == 0 {
-		b.WriteString("(nothing marked)\n")
+		return "(nothing marked)"
 	}
+
+	var b strings.Builder
 
 	for _, ri := range marked {
 		b.WriteString("  ")
@@ -1042,9 +1164,32 @@ func (m *model) confirmView() string {
 		b.WriteString("\n")
 	}
 
+	return strings.TrimSuffix(b.String(), "\n")
+}
+
+func (m *model) confirmView() string {
+	st := tuistyle.New(m.hasDarkBG)
+
+	var b strings.Builder
+
+	verb := m.action.Verb
+	if m.action.CascadeAction != nil {
+		verb += "/" + m.action.CascadeAction.Verb
+	}
+
+	b.WriteString(
+		tuistyle.FitLine(st.Header, m.width, fmt.Sprintf("Confirm: %s the following", verb)),
+	)
+	b.WriteString("\n")
 	b.WriteString(tuistyle.RuleLine(m.width, st.Rule))
 	b.WriteString("\n")
-	b.WriteString(st.Footer.Render(m.confirmSummary(len(marked), len(cascade))))
+	b.WriteString(m.confirm.View())
+	b.WriteString("\n")
+	b.WriteString(tuistyle.RuleLine(m.width, st.Rule))
+	b.WriteString("\n")
+
+	marked, cascade := m.markedItems()
+	b.WriteString(tuistyle.FitLine(st.Footer, m.width, m.confirmSummary(len(marked), len(cascade))))
 
 	return b.String()
 }
@@ -1057,7 +1202,7 @@ func (m *model) confirmSummary(actionCount, cascadeCount int) string {
 		summary = fmt.Sprintf("%s | %d to %s", summary, cascadeCount, m.action.CascadeAction.Verb)
 	}
 
-	return summary + " — enter=confirm esc=back q=cancel"
+	return summary + " — enter=confirm esc=back q=cancel ?=help"
 }
 
 // markedItems splits m.items by decision: items marked with Action, and
@@ -1082,32 +1227,72 @@ func (m *model) markedItems() ([]reviewItem, []reviewItem) {
 func (m *model) tally() string {
 	marked, cascade := m.markedItems()
 
-	var countsPart, help string
-
+	counts := fmt.Sprintf("%d to %s", len(marked), m.action.Verb)
 	if m.action.CascadeAction != nil {
-		countsPart = fmt.Sprintf("%d %s | %d %s",
+		counts = fmt.Sprintf("%d %s | %d %s",
 			len(marked), m.action.Verb, len(cascade), m.action.CascadeAction.Verb)
-		help = fmt.Sprintf(
-			"%s=%s  %s=%s  u=unmark  enter=next  q/esc=cancel  ctrl+j/k=scroll  ctrl+u/d=page",
-			m.action.markKey(),
-			m.action.Verb,
-			m.action.CascadeAction.markKey(),
-			m.action.CascadeAction.Verb,
-		)
-	} else {
-		countsPart = fmt.Sprintf("%d to %s", len(marked), m.action.Verb)
-		help = fmt.Sprintf(
-			"%s=%s  u=unmark  enter=next  q/esc=cancel  ctrl+j/k=scroll  ctrl+u/d=page",
-			m.action.markKey(),
-			m.action.Verb,
+	}
+
+	prefix := fmt.Sprintf("%s | %d/%d reviewed | ", counts, len(m.detailCache), len(m.items))
+
+	if m.quitArmed {
+		return fmt.Sprintf(
+			"%s%d marked — q/esc again to discard, any other key to keep reviewing",
+			prefix, len(marked)+len(cascade),
 		)
 	}
 
-	return fmt.Sprintf(
-		"%s | %d/%d reviewed | %s",
-		countsPart,
-		len(m.detailCache),
-		len(m.items),
-		help,
-	)
+	hintWidth := lipgloss.Width(m.help.ShortHelpView([]key.Binding{m.keys.help}))
+	if m.width-lipgloss.Width(prefix) < hintWidth {
+		prefix = counts + " | "
+	}
+
+	return prefix + m.fitHelp(m.width-lipgloss.Width(prefix))
+}
+
+// fitHelp drops whole trailing bindings to fit width, always keeping the last
+// (? help); help.Model's own width limit overflows when its ellipsis won't fit.
+func (m *model) fitHelp(width int) string {
+	all := m.keys.ShortHelp()
+	lead, last := all[:len(all)-1], all[len(all)-1]
+
+	for n := len(lead); n >= 0; n-- {
+		bindings := append(slices.Clone(lead[:n]), last)
+
+		if out := m.help.ShortHelpView(bindings); lipgloss.Width(out) <= width {
+			return out
+		}
+	}
+
+	return ""
+}
+
+func (m *model) helpView() string {
+	st := tuistyle.New(m.hasDarkBG)
+
+	var b strings.Builder
+
+	b.WriteString(tuistyle.FitLine(st.Header, m.width, "Help"))
+	b.WriteString("\n")
+	b.WriteString(tuistyle.RuleLine(m.width, st.Rule))
+	b.WriteString("\n")
+
+	var lines []string
+
+	for _, binding := range m.overlayHelp() {
+		h := binding.Help()
+		lines = append(lines, fmt.Sprintf("  %-14s %s", h.Key, h.Desc))
+	}
+
+	lines = lines[:min(len(lines), max(m.height-overlayChromeH, 1))]
+	for _, line := range lines {
+		b.WriteString(ansi.Truncate(line, m.width, "…"))
+		b.WriteString("\n")
+	}
+
+	b.WriteString(tuistyle.RuleLine(m.width, st.Rule))
+	b.WriteString("\n")
+	b.WriteString(tuistyle.FitLine(st.Footer, m.width, "press any key to close"))
+
+	return b.String()
 }

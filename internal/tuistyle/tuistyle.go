@@ -6,10 +6,12 @@
 package tuistyle
 
 import (
+	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // AltScreenView wraps content in a tea.View rendered on the terminal's
@@ -18,8 +20,28 @@ import (
 func AltScreenView(content string) tea.View {
 	v := tea.NewView(content)
 	v.AltScreen = true
+	v.WindowTitle = "jj-trim"
+	v.MouseMode = tea.MouseModeCellMotion
 
 	return v
+}
+
+const (
+	MinWidth  = 30
+	MinHeight = 9
+)
+
+func TooSmall(width, height int) bool {
+	return width < MinWidth || height < MinHeight
+}
+
+func TooSmallView(width, height int) tea.View {
+	msg := fmt.Sprintf(
+		"Terminal too small (%dx%d) — need at least %dx%d",
+		width, height, MinWidth, MinHeight,
+	)
+
+	return AltScreenView(lipgloss.NewStyle().Width(max(width, 1)).Render(msg))
 }
 
 // Styles are computed from hasDarkBG (learned via tea.BackgroundColorMsg)
@@ -98,4 +120,15 @@ func RuleLine(width int, st lipgloss.Style) string {
 	}
 
 	return st.Render(strings.Repeat("─", width))
+}
+
+// FitLine renders text on one line of exactly width columns; Style.Width alone wraps.
+func FitLine(st lipgloss.Style, width int, text string) string {
+	if width < 1 {
+		return ""
+	}
+
+	content := max(width-st.GetHorizontalFrameSize(), 0)
+
+	return st.Width(width).Render(ansi.Truncate(text, content, "…"))
 }
