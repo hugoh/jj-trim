@@ -26,7 +26,7 @@ type screen int
 
 const (
 	// screenLoading is first so the zero-value model starts in it —
-	// newModel no longer builds a child synchronously (see loadSessionCmd),
+	// buildModel no longer builds a child synchronously (see loadSessionCmd),
 	// so there's nothing to show until the first sessionLoadedMsg arrives.
 	screenLoading screen = iota
 	screenChild
@@ -75,7 +75,7 @@ type model struct {
 	err error
 }
 
-func newModel(
+func buildModel(
 	ctx context.Context,
 	r jj.Runner,
 	cfg trimconfig.Config,
@@ -140,8 +140,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if bgMsg, ok := msg.(tea.BackgroundColorMsg); ok {
 		m.hasDarkBG = bgMsg.IsDark()
 		m.background = &bgMsg
+		cmd := m.forwardToChild(msg)
 
-		return m, m.forwardToChild(msg)
+		return m, cmd
 	}
 
 	if tickMsg, ok := msg.(spinner.TickMsg); ok {
@@ -164,7 +165,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	return m, m.forwardToChild(msg)
+	cmd := m.forwardToChild(msg)
+
+	return m, cmd
 }
 
 func (m *model) View() tea.View {
@@ -276,7 +279,9 @@ func (m *model) handleSessionLoaded(msg sessionLoadedMsg) (tea.Model, tea.Cmd) {
 func (m *model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.width, m.height = msg.Width, msg.Height
 
-	return m, m.forwardToChild(m.childWindowSize())
+	cmd := m.forwardToChild(m.childWindowSize())
+
+	return m, cmd
 }
 
 func (m *model) childWindowSize() tea.WindowSizeMsg {

@@ -218,7 +218,7 @@ func TestModel_TabAndFilters_IgnoredWhileChildNotIdle(t *testing.T) {
 
 	fake := &jj.Fake{}
 
-	m := loadedModel(t, newModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake)))
+	m := loadedModel(t, buildModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake)))
 
 	next, _ := m.Update(tea.KeyPressMsg{Code: 'd'}) // mark item 0 for delete
 	m, _ = next.(*model)
@@ -263,7 +263,7 @@ func TestModel_ToggleMode_CarriesForwardAppliedResult(t *testing.T) {
 
 	fake := deleteOneItemFake(t)
 
-	m := loadedModel(t, newModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake)))
+	m := loadedModel(t, buildModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake)))
 
 	m = applyDeleteThenDismiss(t, m)
 
@@ -300,7 +300,7 @@ func TestModel_ApplyFilters_CarriesForwardAppliedResult(t *testing.T) {
 
 	fake := deleteOneItemFake(t)
 
-	m := loadedModel(t, newModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake)))
+	m := loadedModel(t, buildModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake)))
 
 	m = applyDeleteThenDismiss(t, m)
 
@@ -333,7 +333,7 @@ func TestSessionLoaded_ChildInheritsLearnedLightTheme(t *testing.T) {
 	t.Parallel()
 
 	fake := &jj.Fake{}
-	m := newModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake))
+	m := buildModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake))
 
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = asModel(t, next)
@@ -353,7 +353,7 @@ func TestInit_RequestsBackgroundColor(t *testing.T) {
 	t.Parallel()
 
 	fake := &jj.Fake{}
-	m := newModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake))
+	m := buildModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake))
 
 	batch, ok := m.Init()().(tea.BatchMsg)
 	require.True(t, ok)
@@ -373,7 +373,7 @@ func TestHelp_ListsBrowseKeysAndBlocksChromeKeys(t *testing.T) {
 	t.Parallel()
 
 	fake := &jj.Fake{}
-	m := newModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake))
+	m := buildModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake))
 
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = driveLoad(t, asModel(t, next), m.Init())

@@ -32,7 +32,7 @@ func TestModel_ChildOutcome_RecoverableAfterApply(t *testing.T) {
 
 	opts := deleteOneItemOpts(fake)
 
-	m := loadedModel(t, newModel(t.Context(), fake, trimconfig.Config{}, opts))
+	m := loadedModel(t, buildModel(t.Context(), fake, trimconfig.Config{}, opts))
 
 	m = markConfirmApply(t, m)
 
@@ -55,7 +55,7 @@ func TestResultFromFinishedModel_ReloadFailureKeepsPendingCarry(t *testing.T) {
 
 	fake := deleteOneItemFake(t)
 
-	m := loadedModel(t, newModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake)))
+	m := loadedModel(t, buildModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake)))
 	m = applyDeleteThenDismiss(t, m)
 
 	next, cmd := m.Update(
@@ -132,7 +132,7 @@ func TestResultFromFinishedModel_ChildErrorKeepsResult(t *testing.T) {
 		Errs: map[string]error{jj.Key(testVerbAbandon, "chain-a"): errors.New("boom")},
 	}
 
-	m := loadedModel(t, newModel(t.Context(), fake, trimconfig.Config{}, opts))
+	m := loadedModel(t, buildModel(t.Context(), fake, trimconfig.Config{}, opts))
 
 	next, _ := m.Update(tea.KeyPressMsg{Code: 'd'}) // mark item 0 ("w") for primary delete
 	m = asModel(t, next)
@@ -188,7 +188,7 @@ func TestResultFromFinishedModel_Success(t *testing.T) {
 
 	fake := deleteOneItemFake(t)
 
-	m := loadedModel(t, newModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake)))
+	m := loadedModel(t, buildModel(t.Context(), fake, trimconfig.Config{}, deleteOneItemOpts(fake)))
 	m = markConfirmApply(t, m)
 
 	result, err := resultFromFinishedModel(m)

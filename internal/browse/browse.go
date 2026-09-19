@@ -66,7 +66,7 @@ type Options struct {
 // screenLoading/loadSessionCmd) — a failure there surfaces later as an
 // error from Run, exactly like any other in-session failure.
 func NewModel(ctx context.Context, r jj.Runner, cfg trimconfig.Config, opts Options) tea.Model {
-	return newModel(ctx, r, cfg, opts)
+	return buildModel(ctx, r, cfg, opts)
 }
 
 // Run launches the interactive browse front end and blocks until the user
@@ -77,7 +77,7 @@ func Run(
 	ctx context.Context, r jj.Runner, cfg trimconfig.Config, opts Options,
 	stdin io.Reader, stdout io.Writer,
 ) (review.Result, error) {
-	m := newModel(ctx, r, cfg, opts)
+	m := buildModel(ctx, r, cfg, opts)
 
 	program := tea.NewProgram(m, tea.WithInput(stdin), tea.WithOutput(stdout), tea.WithContext(ctx))
 
