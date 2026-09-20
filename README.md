@@ -7,8 +7,6 @@ bookmarks whose content is already in trunk, detects anonymous forks that were
 never bookmarked, and presents everything in a preview graph or an interactive
 TUI — with jj's own `jj op revert` as the safety net.
 
-[![CI](https://github.com/hugoh/jj-trim/actions/workflows/ci.yml/badge.svg)](https://github.com/hugoh/jj-trim/actions/workflows/ci.yml)
-
 ## Features
 
 - **Merged bookmark detection** — bookmarks whose commit is an ancestor of
