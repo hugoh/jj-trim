@@ -32,7 +32,6 @@ builds:
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
-
 nfpms:
   - maintainer: "Hugo Haas <hugoh@hugoh.net>"
     description: "Clean up merged bookmarks and abandoned anonymous commits in jj repositories"
