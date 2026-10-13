@@ -1,5 +1,5 @@
 # Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
-_commit: v1.24.7
+_commit: v1.26.25
 _src_path: https://github.com/hugoh/go-tools.git
 coverage_total: 90
 golangci_extra_disable:
@@ -22,6 +22,7 @@ has_homebrew_cask: true
 has_pages: false
 has_test_int: false
 nfpm_extra_contents: []
+package_format: nfpm
 project_description: Clean up merged bookmarks and abandoned anonymous commits in
     jj repositories
 project_name: jj-trim
