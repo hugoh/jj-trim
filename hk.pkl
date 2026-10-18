@@ -47,7 +47,7 @@ local linters = new Mapping<String, Step> {
     check = "cog check --from-latest-tag"
   }
   ["duplication"] = {
-    check = "cpd"
+    check = "jscpd"
   }
   ["goreleaser"]= {
     check = "mise run lint-release"
