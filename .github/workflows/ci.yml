@@ -19,18 +19,18 @@ permissions: {}
 
 jobs:
   hk:
-    uses: hugoh/go-tools/.github/workflows/go-hk.yml@6e9773eab0aacfcb297323956f6869270e946a7c # v1.26.30
+    uses: hugoh/go-tools/.github/workflows/go-hk.yml@495f8baecd09e942325c721ae5d57882233ddc7e # v1.26.31
     permissions:
       contents: read
 
   goci:
-    uses: hugoh/go-tools/.github/workflows/go-ci.yml@6e9773eab0aacfcb297323956f6869270e946a7c # v1.26.30
+    uses: hugoh/go-tools/.github/workflows/go-ci.yml@495f8baecd09e942325c721ae5d57882233ddc7e # v1.26.31
     permissions:
       contents: read
 
   release:
     needs: [hk, goci]
-    uses: hugoh/go-tools/.github/workflows/go-release.yml@6e9773eab0aacfcb297323956f6869270e946a7c # v1.26.30
+    uses: hugoh/go-tools/.github/workflows/go-release.yml@495f8baecd09e942325c721ae5d57882233ddc7e # v1.26.31
     permissions:
       contents: write
     with:
