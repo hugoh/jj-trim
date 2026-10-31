@@ -1,5 +1,5 @@
 # Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
-_commit: v1.26.36
+_commit: v1.28.0
 _src_path: https://github.com/hugoh/go-tools.git
 coverage_total: 90
 golangci_extra_disable:
@@ -20,6 +20,7 @@ has_gen: false
 has_goreleaser: true
 has_homebrew_cask: true
 has_pages: false
+has_prebuild: false
 has_test_int: false
 nfpm_extra_contents: []
 package_format: nfpm
