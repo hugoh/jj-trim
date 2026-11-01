@@ -43,7 +43,16 @@ brew install hugoh/tap/jj-trim
 
 ### Linux (deb/rpm)
 
-Download the `.deb` or `.rpm` from the [releases page](https://github.com/hugoh/jj-trim/releases) and install with your package manager:
+On Debian/Ubuntu, install from the apt repository:
+
+```sh
+curl -1sLf 'https://dl.cloudsmith.io/public/hugoh/apt/setup.deb.sh' | sudo -E bash
+sudo apt install jj-trim
+```
+
+Package repository hosting is graciously provided by [Cloudsmith](https://cloudsmith.com).
+
+Or download the `.deb` or `.rpm` from the [releases page](https://github.com/hugoh/jj-trim/releases) and install with your package manager:
 
 ```sh
 # Debian/Ubuntu
