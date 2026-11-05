@@ -46,16 +46,17 @@ nfpms:
 # Publishers see every artifact; each one filters for its own package type.
 # armv7 debs are skipped: they are armhf like armv6, and Cloudsmith rejects
 # the duplicate. rpm names the two arches differently, so both are pushed.
+# -W: don't wait for Cloudsmith's package sync, which can outlast the release job.
 publishers:
   - name: cloudsmith-apt
     cmd: >-
-      sh -c 'case "$0" in *_armv7.deb) ;; *.deb) cloudsmith push deb hugoh/apt/any-distro/any-version "$0";; esac'
+      sh -c 'case "$0" in *_armv7.deb) ;; *.deb) cloudsmith push deb -W hugoh-oss/jj-trim/any-distro/any-version "$0";; esac'
       {{ .ArtifactPath }}
     env:
       - CLOUDSMITH_API_KEY={{ .Env.CLOUDSMITH_API_KEY }}
   - name: cloudsmith-rpm
     cmd: >-
-      sh -c 'case "$0" in *.rpm) cloudsmith push rpm hugoh/rpm/any-distro/any-version "$0";; esac'
+      sh -c 'case "$0" in *.rpm) cloudsmith push rpm -W hugoh-oss/jj-trim/any-distro/any-version "$0";; esac'
       {{ .ArtifactPath }}
     env:
       - CLOUDSMITH_API_KEY={{ .Env.CLOUDSMITH_API_KEY }}
