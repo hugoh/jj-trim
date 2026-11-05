@@ -11,14 +11,14 @@ brew install hugoh/tap/jj-trim
 ## Debian/Ubuntu (apt)
 
 ```sh
-curl -1sLf 'https://dl.cloudsmith.io/public/hugoh/apt/setup.deb.sh' | sudo -E bash
+curl -1sLf 'https://dl.cloudsmith.io/public/hugoh-oss/jj-trim/setup.deb.sh' | sudo -E bash
 sudo apt install jj-trim
 ```
 
 ## RHEL/Fedora (dnf)
 
 ```sh
-curl -1sLf 'https://dl.cloudsmith.io/public/hugoh/rpm/setup.rpm.sh' | sudo -E bash
+curl -1sLf 'https://dl.cloudsmith.io/public/hugoh-oss/jj-trim/setup.rpm.sh' | sudo -E bash
 sudo dnf install jj-trim
 ```
 
