@@ -1,6 +1,9 @@
 {
   // DO NOT EDIT — managed by hugoh/go-tools via copier.
-  "$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.6.4/schema.json",
+  // .copier-answers.yml is written by copier's own YAML serializer, not
+  // rendered from a template, so biome's YAML formatter must leave it alone
+  "files": { "includes": ["**", "!**/.copier-answers.yml"] },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",
