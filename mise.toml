@@ -5,29 +5,29 @@
 [tools]
 golangci-lint = "2.15.0"
 gotestsum = "1.13.0"
-"go:github.com/vladopajic/go-test-coverage/v2" = "2.19.0"
+"go:github.com/vladopajic/go-test-coverage/v2" = "2.21.0"
 "go:golang.org/x/tools/cmd/deadcode" = "0.49.0"
 #
-goreleaser = "2.18.2"
+goreleaser = "2.19.0"
 #
 #
 "pipx:cloudsmith-cli" = "1.30.1"
 #
 cocogitto = "7.0.0"
-hk = "2.9.0"
-rumdl = "0.2.77"
+hk = "2.10.0"
+rumdl = "0.3.2"
 biome = "2.6.4"
-ghalint = "1.5.6"
+ghalint = "1.6.0"
 gitleaks = "8.30.1"
-jactionlint = "2.2.0"
-pinact = "5.0.0"
-typos = "1.50.2"
+jactionlint = "2.4.0"
+pinact = "5.0.2"
+typos = "1.51.1"
 shellcheck = "0.11.0"
 "aqua:anordal/shellharden" = "4.3.2"
 shfmt = "3.14.1"
-tombi = "1.5.5"
-"github:owenlamont/ryl" = "0.26.1"
-"npm:jscpd" = "5.4.1"
+tombi = "1.9.8"
+"github:owenlamont/ryl" = "0.27.0"
+"npm:jscpd" = "5.4.2"
 
 [env]
 COVEROUT = "cover.out"
