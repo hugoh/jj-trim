@@ -9,7 +9,7 @@ require (
 	github.com/alecthomas/kong v1.17.0
 	github.com/alecthomas/mango-kong v0.1.0
 	github.com/charmbracelet/x/ansi v0.11.9
-	github.com/charmbracelet/x/exp/teatest/v2 v2.0.0-20260803091719-3755ebad01b1
+	github.com/charmbracelet/x/exp/teatest/v2 v2.0.0-20261101151554-27ecf3e4d454
 	github.com/stretchr/testify v1.12.1
 	github.com/willabides/kongplete v0.4.0
 	go.uber.org/goleak v1.3.0
