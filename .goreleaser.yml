@@ -49,12 +49,15 @@ nfpms:
 # -W: don't wait for Cloudsmith's package sync, which can outlast the release job.
 publishers:
   - name: cloudsmith-apt
+    # A pre-release goes to the GitHub release only, so apt/dnf keep serving the stable version.
+    disable: "{{ .IsPrerelease }}"
     cmd: >-
       sh -c 'case "$0" in *_armv7.deb) ;; *.deb) cloudsmith push deb -W hugoh-oss/jj-trim/any-distro/any-version "$0";; esac'
       {{ .ArtifactPath }}
     env:
       - CLOUDSMITH_API_KEY={{ .Env.CLOUDSMITH_API_KEY }}
   - name: cloudsmith-rpm
+    disable: "{{ .IsPrerelease }}"
     cmd: >-
       sh -c 'case "$0" in *.rpm) cloudsmith push rpm -W hugoh-oss/jj-trim/any-distro/any-version "$0";; esac'
       {{ .ArtifactPath }}
@@ -75,8 +78,12 @@ brews:
       pull_request:
         enabled: true
     directory: Formula
+    skip_upload: auto
     description: "Clean up merged bookmarks and abandoned anonymous commits in jj repositories"
     homepage: "https://github.com/hugoh/jj-trim"
+release:
+  prerelease: auto
+
 changelog:
   use: git
   sort: asc
