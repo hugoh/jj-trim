@@ -45,7 +45,7 @@ jobs:
   jj:
     needs: [changes]
     if: needs.changes.outputs.jj == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
-    uses: hugoh/go-tools/.github/workflows/go-tool-compat.yml@01872c2bf8fd9688f8a6b25c15567414e2cb6794 # v1.31.7
+    uses: hugoh/go-tools/.github/workflows/go-tool-compat.yml@a3238b3b919ed163f078c0f2cca338e290c5c788 # v1.32.2
     permissions:
       contents: read
     with:
